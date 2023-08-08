@@ -1,0 +1,26 @@
+[package]
+name = "plugy"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plugy-core = { path = "./crates/plugy-core" }
+plugy-macros = { path = "./crates/plugy-macros" }
+plugy-runtime = { path = "./crates/plugy-runtime" }
+
+
+[workspace]
+members = [
+    "crates/plugy-core",
+    "crates/plugy-macros",
+    "crates/plugy-runtime",
+    "examples/runner",
+    "examples/foo-plugin",
+    "examples/shared"
+]
+
+
+[profile.release]
+lto = true

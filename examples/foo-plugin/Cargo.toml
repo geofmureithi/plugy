@@ -1,0 +1,15 @@
+[package]
+name = "foo-plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+plugy-macros = { path = "../../crates/plugy-macros" }
+plugy-core = { path = "../../crates/plugy-core" }
+shared = { path = "../../examples/shared" }
+serde = { version = "1", features = ["derive"] }
