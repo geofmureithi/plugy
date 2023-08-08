@@ -3,6 +3,9 @@ name = "plugy-core"
 version = "0.1.0"
 edition = "2021"
 readme = "../../README.md"
+categories = ["wasm", "plugin", "wasi", "inventory"]
+license = "GNU General Public License"
+repository = "https://github.com/geofmureithi/plugy"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
