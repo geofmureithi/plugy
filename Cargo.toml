@@ -1,7 +1,13 @@
 [package]
 name = "plugy"
+description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
 version = "0.1.0"
 edition = "2021"
+readme = "../../README.md"
+categories = ["wasm", "plugin", "wasi", "inventory"]
+license = "GPL-3.0-only"
+repository = "https://github.com/geofmureithi/plugy"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
