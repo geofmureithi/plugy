@@ -3,6 +3,9 @@ name = "plugy-macros"
 version = "0.1.0"
 edition = "2021"
 readme = "../../README.md"
+categories = ["wasm", "plugin", "wasi", "inventory"]
+license = "GPL-3.0-only"
+repository = "https://github.com/geofmureithi/plugy"
 
 [lib]
 proc-macro = true
