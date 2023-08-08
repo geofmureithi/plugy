@@ -1,5 +1,6 @@
 [package]
 name = "plugy-runtime"
+description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
 version = "0.1.0"
 edition = "2021"
 readme = "../../README.md"
