@@ -90,7 +90,7 @@ This project is licensed under the GNU General Public License.
 
 <!-- Badges -->
 
-[github-actions-badge]: https://github.com/geofmureithi/plugy/workflows/build/badge.svg
+[github-actions-badge]: https://github.com/geofmureithi/plugy/actions/workflows/build.yml/badge.svg
 
 [github-release]: https://github.com/geofmureithi/plugy/releases
 [github-release-svg]: https://img.shields.io/github/release/geofmureithi/plugy.svg
