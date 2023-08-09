@@ -13,6 +13,7 @@ dashmap = "5.4.0"
 plugy-core = { path = "../plugy-core" }
 serde = { version = "1", features = ["derive"] }
 wasmtime = "10.0.1"
+async-lock = "2.7.0"
 
 [dev-dependencies]
 plugy-macros = { path = "../plugy-macros" }

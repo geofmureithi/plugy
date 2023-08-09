@@ -74,6 +74,7 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn dealloc(value: u64) {
     let (ptr, len) = from_bitwise(value);
+    #[allow(clippy::useless_transmute)]
     let ptr = std::mem::transmute::<usize, *mut u8>(ptr as _);
     let buffer = Vec::from_raw_parts(ptr, len as _, len as _);
     std::mem::drop(buffer);
@@ -157,6 +158,7 @@ pub fn write_msg<T: serde::ser::Serialize>(value: &T) -> u64 {
 /// ```
 pub unsafe fn read_msg<T: serde::de::DeserializeOwned>(value: u64) -> T {
     let (ptr, len) = from_bitwise(value);
+    #[allow(clippy::useless_transmute)]
     let ptr = std::mem::transmute::<usize, *mut u8>(ptr as _);
     let buffer = Vec::from_raw_parts(ptr, len as _, len as _);
     bincode::deserialize(&buffer).unwrap()
