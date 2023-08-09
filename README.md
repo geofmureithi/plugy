@@ -68,9 +68,21 @@ And you are set!
 
 Check out the [examples](./examples/) directory for sample usage of plugy.
 
+## Milestones
+
+| Status | Goal | Labels |
+| :---: | :--- | --- |
+| ⏳ | [accept multiple arity in plugin functions](https://github.com/geofmureithi/plugy/issues/2) |`pending`|
+| ⏳ | [pass down context between host and guest](https://github.com/geofmureithi/plugy/issues/3) |`pending`|
+
 ## Contributing
 
 Contributions to plugy are welcome! If you find a bug or want to propose a new feature, feel free to create an issue or submit a pull request.
+
+### Thanks to
+- [Wasmtime](https://wasmtime.dev/)
+- Bincode
+- Serde
 
 License
 
