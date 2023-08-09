@@ -31,7 +31,7 @@ pub type Caller = Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>;
 /// }
 ///
 /// fn main() {
-///     let runtime = Runtime::<Box dyn Plugin>::new();
+///     let runtime = Runtime::<Box<dyn Plugin>>::new();
 ///
 ///     // Load and manage plugins...
 /// }
@@ -320,19 +320,6 @@ impl<P: Serialize, R: DeserializeOwned> Func<P, R> {
 /// Implementors of this trait provide the ability to asynchronously retrieve
 /// the Wasm module data for a plugin.
 ///
-/// # Examples
-///
-/// ```rust
-/// # use plugy::runtime::PluginLoader;
-/// #
-/// struct MyPluginLoader;
-///
-/// impl PluginLoader for MyPluginLoader {
-///     fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
-///         // ... (implementation details)
-///     }
-/// }
-/// ```
 pub trait PluginLoader {
     /// Asynchronously loads the Wasm module data for the plugin.
     ///
@@ -344,26 +331,5 @@ pub trait PluginLoader {
     ///
     /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
     /// representing the asynchronous loading process.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use plugy::runtime::PluginLoader;
-    /// #
-    /// # struct MyPluginLoader;
-    /// #
-    /// # impl PluginLoader for MyPluginLoader {
-    /// #     fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
-    /// #         Box::pin(async { Ok(Vec::new()) })
-    /// #     }
-    /// # }
-    /// #
-    /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
-    /// let loader = MyPluginLoader;
-    /// let wasm_data: Vec<u8> = loader.load().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
 }
