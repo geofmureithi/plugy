@@ -26,8 +26,8 @@ pub type Caller = Arc<RwLock<Store<Option<RuntimeCaller<()>>>>>;
 ///     fn greet(&self);
 /// }
 /// let runtime = Runtime::<Box<dyn Plugin>>::new();
-///     // Load and manage plugins...
-/// }
+/// // Load and manage plugins...
+/// ```
 pub struct Runtime<P> {
     engine: Engine,
     linker: Linker<Option<RuntimeCaller<()>>>,
