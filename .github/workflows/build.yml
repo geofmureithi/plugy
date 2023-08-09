@@ -1,0 +1,37 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build core
+      run: cargo build -p plugy-core --verbose 
+    - name: Test core
+      run: cargo test -p plugy-core --verbose
+    - name: Build macros
+      run: cargo build -p plugy-macros --verbose 
+    - name: Test macros
+      run: cargo test -p plugy-macros --verbose
+    - name: Build runtime
+      run: cargo build -p plugy-runtime --verbose 
+    - name: Test runtime
+      run: cargo test -p plugy-runtime --verbose
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check the project
+      run: cargo clippy
