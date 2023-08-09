@@ -1,9 +1,10 @@
 [package]
 name = "plugy"
 description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-categories = ["wasm", "plugin", "wasi", "inventory"]
+categories = ["wasm"]
+keywords = ["plugin", "wasi", "inventory", "wasm", "plugy"]
 license = "GPL-3.0-only"
 repository = "https://github.com/geofmureithi/plugy"
 
@@ -11,9 +12,9 @@ repository = "https://github.com/geofmureithi/plugy"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-plugy-core = { path = "./crates/plugy-core", version = "0.1.0" }
-plugy-macros = { path = "./crates/plugy-macros", version = "0.1.0" }
-plugy-runtime = { path = "./crates/plugy-runtime", version = "0.1.0" }
+plugy-core = { path = "./crates/plugy-core", version = "0.1.1" }
+plugy-macros = { path = "./crates/plugy-macros", version = "0.1.1" }
+plugy-runtime = { path = "./crates/plugy-runtime", version = "0.1.1" }
 
 
 [workspace]

@@ -1,3 +1,8 @@
+//! # plugy-runtime
+//!
+//! The `plugy-runtime` crate serves as the heart of Plugy's dynamic plugin system, enabling the runtime management
+//! and execution of plugins written in WebAssembly (Wasm). It provides functionalities for loading, running,
+//! and interacting with plugins seamlessly within your Rust applications.
 use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
 use serde::{de::DeserializeOwned, Serialize};
