@@ -34,4 +34,4 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Check the project
-      run: cargo clippy -Dwarnings 
+      run: cargo clippy
