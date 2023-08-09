@@ -55,7 +55,7 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
                 .collect();
             quote! {
                 pub async fn #method_name(#method_inputs) #method_output {
-                    let func = self.handle.get_func(#method_name_str).unwrap();
+                    let func = self.handle.get_func(#method_name_str).await.unwrap();
                     func.call_unchecked(&(#(#values),*)).await
                 }
             }

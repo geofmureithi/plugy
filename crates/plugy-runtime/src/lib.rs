@@ -2,14 +2,10 @@ use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
-use std::{
-    future::Future,
-    marker::PhantomData,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use wasmtime::{Engine, Instance, Linker, Module, Store};
-pub type Caller = Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>;
+use async_lock::RwLock;
+pub type Caller = Arc<RwLock<Store<Option<RuntimeCaller<()>>>>>;
 
 /// A runtime environment for managing plugins and instances.
 ///
@@ -31,7 +27,7 @@ pub type Caller = Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>;
 /// }
 ///
 /// fn main() {
-///     let runtime = Runtime::<Box dyn Plugin>::new();
+///     let runtime = Runtime::<Box<dyn Plugin>>::new();
 ///
 ///     // Load and manage plugins...
 /// }
@@ -46,7 +42,7 @@ pub struct Runtime<P> {
 #[allow(dead_code)]
 pub struct RuntimeModule {
     inner: Module,
-    store: Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>,
+    store: Caller,
     instance: Instance,
 }
 
@@ -158,7 +154,7 @@ impl<P> Runtime<P> {
             name,
             RuntimeModule {
                 inner: module.clone(),
-                store: Arc::new(Mutex::new(store)),
+                store: Arc::new(RwLock::new(store)),
                 instance,
             },
         );
@@ -185,7 +181,7 @@ impl<P> Runtime<P> {
         let module = self.modules.get(name).unwrap();
         Ok(P::into_callable(PluginHandle {
             store: module.store.clone(),
-            instance: module.instance.clone(),
+            instance: module.instance,
             inner: PhantomData::<T>,
         }))
     }
@@ -204,7 +200,7 @@ impl<P> Runtime<P> {
 #[derive(Debug, Clone)]
 pub struct PluginHandle<P> {
     instance: Instance,
-    store: Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>,
+    store: Caller,
     inner: PhantomData<P>,
 }
 
@@ -230,18 +226,18 @@ impl<P> PluginHandle<P> {
     /// Returns a `Result` containing the typed function interface on success,
     /// or an `anyhow::Error` if the function retrieval encounters any issues.
 
-    pub fn get_func<I: Serialize, R: DeserializeOwned>(
+    pub async fn get_func<I: Serialize, R: DeserializeOwned>(
         &self,
         name: &str,
     ) -> anyhow::Result<Func<I, R>> {
         let store = self.store.clone();
         let inner_wasm_fn = self.instance.get_typed_func::<u64, u64>(
-            &mut *store.lock().unwrap(),
+            &mut *store.write().await,
             &format!("_plugy_guest_{name}"),
         )?;
         Ok(Func {
             inner_wasm_fn,
-            store: store.clone(),
+            store,
             input: std::marker::PhantomData::<I>,
             output: std::marker::PhantomData::<R>,
         })
@@ -255,7 +251,7 @@ pub trait IntoCallable<P> {
 
 pub struct Func<P: Serialize, R: DeserializeOwned> {
     inner_wasm_fn: wasmtime::TypedFunc<u64, u64>,
-    store: Arc<Mutex<Store<Option<RuntimeCaller<()>>>>>,
+    store: Caller,
     input: PhantomData<P>,
     output: PhantomData<R>,
 }
@@ -293,7 +289,7 @@ impl<P: Serialize, R: DeserializeOwned> Func<P, R> {
     /// or an `anyhow::Error` if the function call or deserialization encounters issues.
 
     pub async fn call_checked(&self, value: &P) -> anyhow::Result<R> {
-        let mut store = self.store.lock().unwrap();
+        let mut store = self.store.write().await;
         let RuntimeCaller {
             memory, alloc_fn, ..
         } = store.data().clone().unwrap();
@@ -320,19 +316,6 @@ impl<P: Serialize, R: DeserializeOwned> Func<P, R> {
 /// Implementors of this trait provide the ability to asynchronously retrieve
 /// the Wasm module data for a plugin.
 ///
-/// # Examples
-///
-/// ```rust
-/// # use plugy::runtime::PluginLoader;
-/// #
-/// struct MyPluginLoader;
-///
-/// impl PluginLoader for MyPluginLoader {
-///     fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
-///         // ... (implementation details)
-///     }
-/// }
-/// ```
 pub trait PluginLoader {
     /// Asynchronously loads the Wasm module data for the plugin.
     ///
@@ -344,26 +327,5 @@ pub trait PluginLoader {
     ///
     /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
     /// representing the asynchronous loading process.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use plugy::runtime::PluginLoader;
-    /// #
-    /// # struct MyPluginLoader;
-    /// #
-    /// # impl PluginLoader for MyPluginLoader {
-    /// #     fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
-    /// #         Box::pin(async { Ok(Vec::new()) })
-    /// #     }
-    /// # }
-    /// #
-    /// # #[tokio::main]
-    /// # async fn main() -> anyhow::Result<()> {
-    /// let loader = MyPluginLoader;
-    /// let wasm_data: Vec<u8> = loader.load().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
 }
