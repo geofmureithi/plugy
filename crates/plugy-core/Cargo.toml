@@ -1,7 +1,7 @@
 [package]
 name = "plugy-core"
 description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 readme = "../../README.md"
 categories = ["wasm"]
