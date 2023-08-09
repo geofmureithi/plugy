@@ -3,7 +3,8 @@ name = "plugy"
 description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
 version = "0.1.0"
 edition = "2021"
-categories = ["wasm", "plugin", "wasi", "inventory"]
+categories = ["wasm"]
+keywords = ["plugin", "wasi", "inventory", "wasm", "plugy"]
 license = "GPL-3.0-only"
 repository = "https://github.com/geofmureithi/plugy"
 
