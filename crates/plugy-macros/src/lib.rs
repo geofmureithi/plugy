@@ -1,3 +1,9 @@
+//! # plugy-macro
+//!
+//! The `plugy-macro` crate provides a collection of macros that streamline the process of generating
+//! bindings and interfaces for plugy's dynamic plugin system. These macros enhance the ergonomics of
+//! working with plugins written in WebAssembly (Wasm) within your Rust applications.
+//!
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};

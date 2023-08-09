@@ -70,16 +70,26 @@ Check out the [examples](./examples/) directory for sample usage of plugy.
 
 ## Milestones
 
-| Status | Goal | Labels |
-| :---: | :--- | --- |
-| ✅ | [accept multiple arity (n-ary) in plugin functions](https://github.com/geofmureithi/plugy/issues/2) |`complete`|
-| ⏳ | [pass down context between host and guest](https://github.com/geofmureithi/plugy/issues/3) |`pending`|
+| Status | Goal                                                                                                | Labels     |
+| :----: | :-------------------------------------------------------------------------------------------------- | ---------- |
+|   ✅   | [accept multiple arity (n-ary) in plugin functions](https://github.com/geofmureithi/plugy/issues/2) | `complete` |
+|   ⏳   | [pass down context between host and guest](https://github.com/geofmureithi/plugy/issues/3)          | `pending`  |
+
+## Functionality
+
+Plugy comprises three fundamental crates, each serving a distinct role in crafting dynamic plugin systems with Rust and WebAssembly:
+- core: This crate houses essential components such as bitwise utilities and the guest module, forming the foundation of Plugy's functionality.
+
+- runtime: The runtime crate orchestrates the execution of your plugin system, allowing seamless integration of plugins into your applications.
+
+- macros: The macros crate offers a collection of macros that simplify the generation of bindings and interfaces, streamlining the process of working with dynamic plugins.
 
 ## Contributing
 
 Contributions to plugy are welcome! If you find a bug or want to propose a new feature, feel free to create an issue or submit a pull request.
 
 ### Thanks to
+
 - [Wasmtime](https://wasmtime.dev/)
 - Bincode
 - Serde
@@ -91,6 +101,5 @@ This project is licensed under the GNU General Public License.
 <!-- Badges -->
 
 [github-actions-badge]: https://github.com/geofmureithi/plugy/actions/workflows/build.yml/badge.svg
-
 [github-release]: https://github.com/geofmureithi/plugy/releases
 [github-release-svg]: https://img.shields.io/github/release/geofmureithi/plugy.svg
