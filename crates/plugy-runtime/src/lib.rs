@@ -25,10 +25,7 @@ pub type Caller = Arc<RwLock<Store<Option<RuntimeCaller<()>>>>>;
 /// trait Plugin {
 ///     fn greet(&self);
 /// }
-///
-/// fn main() {
-///     let runtime = Runtime::<Box<dyn Plugin>>::new();
-///
+/// let runtime = Runtime::<Box<dyn Plugin>>::new();
 ///     // Load and manage plugins...
 /// }
 pub struct Runtime<P> {
