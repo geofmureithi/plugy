@@ -141,12 +141,18 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
         .map(|m| {
             let method_name = &m.sig.ident;
             let args = &m.sig.inputs;
-
+            let types: Vec<_> = args
+                .iter()
+                .filter_map(|arg| match arg {
+                    syn::FnArg::Receiver(_) => None,
+                    syn::FnArg::Typed(t) => Some(t.ty.to_token_stream()),
+                })
+                .collect();
             let values: Vec<_> = args
                 .iter()
                 .filter_map(|arg| match arg {
                     syn::FnArg::Receiver(_) => None,
-                    syn::FnArg::Typed(t) => Some(t.to_token_stream()),
+                    syn::FnArg::Typed(t) => Some(t.pat.to_token_stream()),
                 })
                 .collect();
             let expose_name = format!("_plugy_guest_{}", method_name);
@@ -154,8 +160,8 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             quote! {
                 #[no_mangle]
                 pub unsafe extern "C" fn #expose_name_ident(value: u64) -> u64 {
-                    let value: #ty = plugy_core::guest::read_msg(value);
-                    plugy_core::guest::write_msg(&#ty.#method_name(#(#values)*))
+                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy_core::guest::read_msg(value);
+                    plugy_core::guest::write_msg(&value.#method_name(#(#values),*))
                 }
             }
         })
