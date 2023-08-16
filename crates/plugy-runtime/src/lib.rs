@@ -3,14 +3,19 @@
 //! The `plugy-runtime` crate serves as the heart of Plugy's dynamic plugin system, enabling the runtime management
 //! and execution of plugins written in WebAssembly (Wasm). It provides functionalities for loading, running,
 //! and interacting with plugins seamlessly within your Rust applications.
+use async_lock::RwLock;
 use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
-use wasmtime::{Engine, Instance, Linker, Module, Store};
-use async_lock::RwLock;
-pub type Caller = Arc<RwLock<Store<Option<RuntimeCaller<()>>>>>;
+use wasmtime::{Engine, Instance, Module, Store};
+
+pub type CallerStore<D = ()> = Arc<RwLock<Store<Option<RuntimeCaller<D>>>>>;
+
+pub type Caller<'a, D> = wasmtime::Caller<'a, Option<RuntimeCaller<D>>>;
+
+pub type Linker<D = ()> = wasmtime::Linker<Option<RuntimeCaller<D>>>;
 
 /// A runtime environment for managing plugins and instances.
 ///
@@ -33,18 +38,18 @@ pub type Caller = Arc<RwLock<Store<Option<RuntimeCaller<()>>>>>;
 /// let runtime = Runtime::<Box<dyn Plugin>>::new();
 /// // Load and manage plugins...
 /// ```
-pub struct Runtime<P> {
+pub struct Runtime<P, D = ()> {
     engine: Engine,
-    linker: Linker<Option<RuntimeCaller<()>>>,
+    linker: Linker<D>,
     plugin_interface: PhantomData<P>,
-    modules: DashMap<&'static str, RuntimeModule>,
+    modules: DashMap<&'static str, RuntimeModule<D>>,
 }
 
 /// Single runnable module
 #[allow(dead_code)]
-pub struct RuntimeModule {
+pub struct RuntimeModule<D> {
     inner: Module,
-    store: Caller,
+    store: CallerStore<D>,
     instance: Instance,
 }
 
@@ -52,10 +57,10 @@ pub struct RuntimeModule {
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct RuntimeCaller<D> {
-    memory: wasmtime::Memory,
-    alloc_fn: wasmtime::TypedFunc<u32, u32>,
-    dealloc_fn: wasmtime::TypedFunc<u64, ()>,
-    data: D,
+    pub memory: wasmtime::Memory,
+    pub alloc_fn: wasmtime::TypedFunc<u32, u32>,
+    pub dealloc_fn: wasmtime::TypedFunc<u64, ()>,
+    pub data: D,
 }
 
 impl<D: std::fmt::Debug> fmt::Debug for RuntimeCaller<D> {
@@ -69,31 +74,7 @@ impl<D: std::fmt::Debug> fmt::Debug for RuntimeCaller<D> {
     }
 }
 
-impl<P> Runtime<P> {
-    /// Creates a new instance of the `Runtime` with default configuration.
-    ///
-    /// This function initializes a `Runtime` instance using the default configuration
-    /// settings for the underlying `wasmtime::Config`. It sets up the engine and linker,
-    /// preparing it to load and manage plugin modules.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the initialized `Runtime` instance on success,
-    /// or an `anyhow::Error` if the creation process encounters any issues.
-    pub fn new() -> anyhow::Result<Self> {
-        let mut config = wasmtime::Config::new();
-        config.async_support(true);
-        let engine = Engine::new(&config)?;
-        let linker = Linker::new(&engine);
-        let modules = DashMap::new();
-        Ok(Self {
-            engine,
-            linker,
-            modules,
-            plugin_interface: PhantomData,
-        })
-    }
-
+impl<P, D: Default + Send> Runtime<P, D> {
     /// Loads a plugin using the provided loader and returns the plugin instance.
     ///
     /// This asynchronous function loads a plugin by calling the `load` method on
@@ -135,13 +116,13 @@ impl<P> Runtime<P> {
     /// ```
     pub async fn load<T: PluginLoader>(&self, loader: T) -> anyhow::Result<P::Output>
     where
-        P: IntoCallable<T>,
+        P: IntoCallable<T, D>,
     {
         let bytes = loader.load().await?;
         let name = std::any::type_name::<T>();
         let module = Module::new(&self.engine, bytes)?;
         let instance_pre = self.linker.instantiate_pre(&module)?;
-        let mut store = Store::new(&self.engine, None);
+        let mut store: Store<Option<RuntimeCaller<D>>> = Store::new(&self.engine, None);
         let instance = instance_pre.instantiate_async(&mut store).await?;
         let memory = instance.get_memory(&mut store, "memory").unwrap();
         let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
@@ -150,7 +131,7 @@ impl<P> Runtime<P> {
             memory,
             alloc_fn,
             dealloc_fn,
-            data: (),
+            data: D::default(),
         });
         self.modules.insert(
             name,
@@ -162,6 +143,32 @@ impl<P> Runtime<P> {
         );
         let plugin = self.get_plugin::<T>()?;
         Ok(plugin)
+    }
+}
+
+impl<P, D: Send> Runtime<P, D> {
+    /// Creates a new instance of the `Runtime` with default configuration.
+    ///
+    /// This function initializes a `Runtime` instance using the default configuration
+    /// settings for the underlying `wasmtime::Config`. It sets up the engine and linker,
+    /// preparing it to load and manage plugin modules.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the initialized `Runtime` instance on success,
+    /// or an `anyhow::Error` if the creation process encounters any issues.
+    pub fn new() -> anyhow::Result<Self> {
+        let mut config = wasmtime::Config::new();
+        config.async_support(true);
+        let engine = Engine::new(&config)?;
+        let linker = Linker::new(&engine);
+        let modules = DashMap::new();
+        Ok(Self {
+            engine,
+            linker,
+            modules,
+            plugin_interface: PhantomData,
+        })
     }
 
     /// Retrieves the callable plugin instance for the specified type.
@@ -177,7 +184,7 @@ impl<P> Runtime<P> {
     ///
     pub fn get_plugin<T>(&self) -> anyhow::Result<P::Output>
     where
-        P: IntoCallable<T>,
+        P: IntoCallable<T, D>,
     {
         let name = std::any::type_name::<T>();
         let module = self.modules.get(name).unwrap();
@@ -186,6 +193,87 @@ impl<P> Runtime<P> {
             instance: module.instance,
             inner: PhantomData::<T>,
         }))
+    }
+
+    /// Loads a plugin using the provided loader, but can customize the data stored and returns the plugin instance.
+    ///
+    /// This asynchronous function loads a plugin by calling the `load` method on
+    /// the provided `PluginLoader` instance. It then prepares the plugin for execution,
+    /// instantiates it, and returns the plugin instance wrapped in the appropriate
+    /// callable type.
+    ///
+    /// # Parameters
+    ///
+    /// - `loader`: An instance of a type that implements the `PluginLoader` trait,
+    ///   responsible for loading the plugin's Wasm module data.
+    ///
+    /// - `data_fn`: A function that takes in the module and returns data to be used in that modules functions
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the loaded plugin instance on success,
+    /// or an `anyhow::Error` if the loading and instantiation process encounters any issues.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use plugy_runtime::Runtime;
+    /// use plugy_runtime::PluginLoader;
+    /// use plugy_macros::*;
+    /// use std::future::Future;
+    /// use std::pin::Pin;
+    /// #[plugy_macros::plugin]
+    /// trait Plugin {
+    ///     fn do_stuff(&self);
+    /// }
+    ///
+    /// // impl Plugin for MyPlugin goes to the wasm file
+    /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
+    /// struct MyPlugin;
+    ///
+    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
+    ///     let plugin = runtime.load_with(MyPlugin, |module| module).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn load_with<T: PluginLoader>(
+        &mut self,
+        loader: T,
+        data_fn: impl Fn(&T) -> D,
+    ) -> anyhow::Result<P::Output>
+    where
+        P: IntoCallable<T, D>,
+        D: Context,
+    {
+        let data = data_fn(&loader);
+        data.link(&mut self.linker);
+        let bytes = loader.load().await?;
+        let name = std::any::type_name::<T>();
+        let module = Module::new(&self.engine, bytes)?;
+        let instance_pre = self.linker.instantiate_pre(&module)?;
+        let mut store: Store<Option<RuntimeCaller<D>>> = Store::new(&self.engine, None);
+        let instance = instance_pre.instantiate_async(&mut store).await?;
+        let memory = instance.get_memory(&mut store, "memory").unwrap();
+        let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
+        let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
+
+        *store.data_mut() = Some(RuntimeCaller {
+            memory,
+            alloc_fn,
+            dealloc_fn,
+            data,
+        });
+        self.modules.insert(
+            name,
+            RuntimeModule {
+                inner: module.clone(),
+                store: Arc::new(RwLock::new(store)),
+                instance,
+            },
+        );
+
+        let plugin = self.get_plugin::<T>()?;
+        Ok(plugin)
     }
 }
 
@@ -200,13 +288,13 @@ impl<P> Runtime<P> {
 /// - `P`: The plugin type that corresponds to this handle.
 ///
 #[derive(Debug, Clone)]
-pub struct PluginHandle<P> {
+pub struct PluginHandle<P, D> {
     instance: Instance,
-    store: Caller,
+    store: CallerStore<D>,
     inner: PhantomData<P>,
 }
 
-impl<P> PluginHandle<P> {
+impl<P, D> PluginHandle<P, D> {
     /// Retrieves a typed function interface from the loaded plugin instance.
     ///
     /// This method enables retrieving a typed function interface for a specific
@@ -231,7 +319,7 @@ impl<P> PluginHandle<P> {
     pub async fn get_func<I: Serialize, R: DeserializeOwned>(
         &self,
         name: &str,
-    ) -> anyhow::Result<Func<I, R>> {
+    ) -> anyhow::Result<Func<I, R, D>> {
         let store = self.store.clone();
         let inner_wasm_fn = self.instance.get_typed_func::<u64, u64>(
             &mut *store.write().await,
@@ -246,19 +334,19 @@ impl<P> PluginHandle<P> {
     }
 }
 
-pub trait IntoCallable<P> {
+pub trait IntoCallable<P, D> {
     type Output;
-    fn into_callable(handle: PluginHandle<P>) -> Self::Output;
+    fn into_callable(handle: PluginHandle<P, D>) -> Self::Output;
 }
 
-pub struct Func<P: Serialize, R: DeserializeOwned> {
+pub struct Func<P: Serialize, R: DeserializeOwned, D> {
     inner_wasm_fn: wasmtime::TypedFunc<u64, u64>,
-    store: Caller,
+    store: CallerStore<D>,
     input: PhantomData<P>,
     output: PhantomData<R>,
 }
 
-impl<P: Serialize, R: DeserializeOwned> Func<P, R> {
+impl<P: Serialize, R: DeserializeOwned, D: Send + Clone> Func<P, R, D> {
     /// Invokes the plugin function with the provided input, returning the result.
     ///
     /// This asynchronous method calls the plugin function using the provided input data
@@ -330,4 +418,8 @@ pub trait PluginLoader {
     /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
     /// representing the asynchronous loading process.
     fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
+}
+
+pub trait Context: Sized {
+    fn link(&self, linker: &mut Linker<Self>);
 }
