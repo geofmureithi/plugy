@@ -73,7 +73,7 @@ Check out the [examples](./examples/) directory for sample usage of plugy.
 | Status | Goal                                                                                                | Labels     |
 | :----: | :-------------------------------------------------------------------------------------------------- | ---------- |
 |   ✅   | [accept multiple arity (n-ary) in plugin functions](https://github.com/geofmureithi/plugy/issues/2) | `complete` |
-|   ✅   | [pass down context between host and guest](https://github.com/geofmureithi/plugy/issues/3)          | `pending`  |
+|   ✅   | [pass down context between host and guest](https://github.com/geofmureithi/plugy/issues/3)          | `complete`  |
 
 ## Functionality
 
