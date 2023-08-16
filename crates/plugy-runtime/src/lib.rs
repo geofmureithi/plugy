@@ -219,6 +219,8 @@ impl<P, D: Send> Runtime<P, D> {
     /// ```rust
     /// use plugy_runtime::Runtime;
     /// use plugy_runtime::PluginLoader;
+    /// use plugy_runtime::Context;
+    /// use plugy_runtime::Linker;
     /// use plugy_macros::*;
     /// use std::future::Future;
     /// use std::pin::Pin;
@@ -231,8 +233,18 @@ impl<P, D: Send> Runtime<P, D> {
     /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
     /// struct MyPlugin;
     ///
-    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
-    ///     let plugin = runtime.load_with(MyPlugin, |module| module).await?;
+    /// struct Addr {
+    ///     //eg actix or xtra
+    /// }
+    /// 
+    /// impl Context for Addr {
+    ///     fn link(&self, linker: &mut Linker<Self>) {
+    ///         //expose methods here
+    ///     }
+    /// }
+    ///
+    /// async fn example(runtime: &mut Runtime<Box<dyn Plugin>, Addr>) -> anyhow::Result<()> {
+    ///     let plugin = runtime.load_with(MyPlugin, |_plugin| Addr {}).await?;
     ///     Ok(())
     /// }
     /// ```
