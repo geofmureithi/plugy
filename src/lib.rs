@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 #[cfg(feature = "core")]
 pub mod core {
     pub use plugy_core::*;
