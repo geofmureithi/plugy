@@ -22,5 +22,5 @@ async-lock = "2.7.0"
 
 [dev-dependencies]
 plugy-macros = { path = "../plugy-macros" }
-plugy = { path = "../../" }
+plugy = { path = "../../", features = ["runtime"]}
 

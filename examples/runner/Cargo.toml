@@ -3,10 +3,19 @@ name = "runner"
 version = "0.1.1"
 edition = "2021"
 
+[lib]
+name = "shared"
+path = "src/lib.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1"
-tokio = { version = "1", features = ["full"] }
 plugy = { path = "../../" }
-shared = { path = "../shared"}
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+plugy = { path = "../../", default-features = false, features = ["runtime"] }
+bincode = "1"
+reqwest = "0.11.18"

@@ -1,10 +1,11 @@
 # How to run these examples.
 
-There are three crates:
+There are two crates:
 
-1. shared: (contains the plugin trait used by both runtime and plugins)
-2. runner: the host part of the system.
-3. foo-plugin: an example plugin implementation
+1. runner: the host part of the system.
+2. foo-plugin: an example plugin implementation
+
+The runner crate has a `lib.rs` that can be reused by plugins
 
 To run:
 

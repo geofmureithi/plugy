@@ -5,9 +5,11 @@
 //! working with plugins written in WebAssembly (Wasm) within your Rust applications.
 //!
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, DeriveInput, ImplItem, ImplItemFn, ItemImpl, ItemTrait, MetaNameValue};
+use syn::{
+    parse_macro_input, DeriveInput, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemTrait, MetaNameValue,
+};
 
 /// A procedural macro attribute for generating an asynchronous and callable version of a trait on the host side.
 ///
@@ -76,17 +78,17 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
     quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
-        pub struct #callable_trait_ident<P> {
-            pub handle: plugy::runtime::PluginHandle<P>
+        pub struct #callable_trait_ident<P, D> {
+            pub handle: plugy::runtime::PluginHandle<P, D>
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P> #callable_trait_ident<P> {
+        impl<P, D: Send + Clone> #callable_trait_ident<P, D> {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P> plugy::runtime::IntoCallable<P> for Box<dyn #trait_name> {
-            type Output = #callable_trait_ident<P>;
-            fn into_callable(handle: plugy::runtime::PluginHandle<P>) -> Self::Output {
+        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name> {
+            type Output = #callable_trait_ident<P, D>;
+            fn into_callable(handle: plugy::runtime::PluginHandle<P, D>) -> Self::Output {
                 #callable_trait_ident { handle }
             }
         }
@@ -166,8 +168,8 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             quote! {
                 #[no_mangle]
                 pub unsafe extern "C" fn #expose_name_ident(value: u64) -> u64 {
-                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy_core::guest::read_msg(value);
-                    plugy_core::guest::write_msg(&value.#method_name(#(#values),*))
+                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy::core::guest::read_msg(value);
+                    plugy::core::guest::write_msg(&value.#method_name(#(#values),*))
                 }
             }
         })
@@ -199,4 +201,156 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
             }
         }
     }.into()
+}
+
+#[proc_macro_attribute]
+pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
+    // Parse the input as an ItemImpl
+    let input = parse_macro_input!(input as ItemImpl);
+
+    // Get the name of the struct being implemented
+    let struct_name = &input.self_ty.to_token_stream();
+
+    let struct_name_sync = Ident::new(&format!("{struct_name}Sync"), Span::call_site());
+
+    let mut externs = Vec::new();
+
+    let mut links = Vec::new();
+
+    // Iterate over the items in the impl block to find methods
+    let generated_methods = input
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let syn::ImplItem::Fn(method) = item {
+                let method_name = &method.sig.ident;
+                let method_args: Vec<_> = method
+                    .sig
+                    .inputs
+                    .iter()
+                    .skip(2) // Skip &self, &caller
+                    .map(|arg| {
+                        if let FnArg::Typed(pat_type) = arg {
+                            pat_type.to_token_stream()
+                        } else {
+                            panic!("Unsupported function argument type");
+                        }
+                    })
+                    .collect();
+                let method_pats: Vec<_> = method
+                    .sig
+                    .inputs
+                    .iter()
+                    .skip(2) // Skip &self, &caller
+                    .map(|arg| {
+                        if let FnArg::Typed(pat_type) = arg {
+                            pat_type.pat.to_token_stream()
+                        } else {
+                            panic!("Unsupported function argument type");
+                        }
+                    })
+                    .collect();
+                let return_type = &method.sig.output;
+                let extern_method_name = Ident::new(
+                    &format!("_plugy_context_{}", method_name),
+                    Span::call_site(),
+                );
+
+                externs.push(quote::quote! {
+                    extern "C" {
+                        fn #extern_method_name(ptr: u64) -> u64;
+                    }
+                });
+
+                let extern_method_name_str = extern_method_name.to_string();
+
+                links.push(quote! {
+                    linker
+                        .func_wrap1_async(
+                            "env",
+                            #extern_method_name_str,
+                            move |mut caller: plugy::runtime::Caller<#struct_name>,
+                                ptr: u64|
+                                -> Box<dyn std::future::Future<Output = u64> + Send> {
+                                use plugy::core::bitwise::{from_bitwise, into_bitwise};
+                                Box::new(async move {
+                                    let store = caller.data().clone().unwrap();
+                                    let plugy::runtime::RuntimeCaller {
+                                        memory,
+                                        alloc_fn,
+                                        dealloc_fn,
+                                        data: ctx,
+                                    } = store;
+
+                                    let (ptr, len) = from_bitwise(ptr);
+                                    let mut buffer = vec![0u8; len as _];
+                                    memory.read(&mut caller, ptr as _, &mut buffer).unwrap();
+                                    dealloc_fn
+                                        .call_async(&mut caller, into_bitwise(ptr, len))
+                                        .await
+                                        .unwrap();
+                                    let message: (String,) = bincode::deserialize(&buffer).unwrap();
+                                    let buffer =
+                                        bincode::serialize(&ctx.fetch(&caller, message.0).await)
+                                            .unwrap();
+                                    let ptr = alloc_fn
+                                        .call_async(&mut caller, buffer.len() as _)
+                                        .await
+                                        .unwrap();
+                                    memory.write(&mut caller, ptr as _, &buffer).unwrap();
+                                    into_bitwise(ptr, buffer.len() as _)
+                                })
+                            },
+                        )
+                        .unwrap();
+                });
+
+                Some(quote! {
+                    #[allow(unused_variables)]
+                    pub fn #method_name(&self, #(#method_args),*) #return_type {
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let args = (#(#method_pats),*);
+                            let ptr = plugy::core::guest::write_msg(&args);
+                            unsafe { plugy::core::guest::read_msg(#extern_method_name(ptr)) }
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        panic!("You are trying to call wasm methods outside of wasm32")
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Generate the code for the context methods
+    let generated = quote::quote! {
+            #[cfg(not(target_arch = "wasm32"))]
+            #input
+
+            impl #struct_name {
+                pub fn current() -> #struct_name_sync {
+                    #struct_name_sync
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            impl plugy::runtime::Context for #struct_name {
+                fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
+                    #(#links)*
+                }
+            }
+
+            pub struct #struct_name_sync;
+
+            impl #struct_name_sync {
+                #(#generated_methods)*
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            #(#externs)*
+        };
+
+    // Return the generated code as a TokenStream
+    generated.into()
 }
