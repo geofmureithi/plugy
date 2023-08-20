@@ -4,7 +4,6 @@
 //! plugy's dynamic plugin system. It provides essential functionalities that enable seamless integration
 //! of plugins into your Rust applications using WebAssembly (Wasm).
 //! 
-#![doc = include_str!("../../../README.md")]
 //!
 //! ## Modules
 //!
