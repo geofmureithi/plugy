@@ -3,14 +3,14 @@
 //! The `plugy-runtime` crate serves as the heart of Plugy's dynamic plugin system, enabling the runtime management
 //! and execution of plugins written in WebAssembly (Wasm). It provides functionalities for loading, running,
 //! and interacting with plugins seamlessly within your Rust applications.
-use anyhow::Context;
+use anyhow::Context as ErrorContext;
 use async_lock::RwLock;
 use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
 use plugy_core::PluginLoader;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 use wasmtime::{Engine, Instance, Module, Store};
 
 pub type CallerStore<D = ()> = Arc<RwLock<Store<Option<RuntimeCaller<D>>>>>;
@@ -298,7 +298,9 @@ impl<P, D: Send> Runtime<P, D> {
         let instance_pre = self.linker.instantiate_pre(&module)?;
         let mut store: Store<Option<RuntimeCaller<D>>> = Store::new(&self.engine, None);
         let instance = instance_pre.instantiate_async(&mut store).await?;
-        let memory = instance.get_memory(&mut store, "memory").context("missing memory");
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .context("missing memory");
         let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
         let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
 
