@@ -220,7 +220,7 @@ impl<P, D: Send> Runtime<P, D> {
         let module = self
             .modules
             .get(name)
-            .context("missing plugin requested, did you forget .load");
+            .context("missing plugin requested, did you forget .load")?;
         Ok(P::into_callable(PluginHandle {
             store: module.store.clone(),
             instance: module.instance,
