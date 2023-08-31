@@ -48,13 +48,50 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
     let trait_name = &trait_item.ident;
     let trait_methods = &trait_item.items;
 
-    let async_methods = trait_methods.iter().map(|item| {
-        if let syn::TraitItem::Fn(method) = item {
+    let mut generic_types = vec![];
+
+    let async_methods = trait_methods.iter().map(|item| match item {
+        syn::TraitItem::Fn(method) => {
             let method_name = &method.sig.ident;
-            let method_inputs = &method.sig.inputs;
+            let method_inputs: Vec<_> = method
+                .sig
+                .inputs
+                .iter()
+                .map(|input| match &input {
+                    FnArg::Receiver(_) => input.to_token_stream(),
+                    FnArg::Typed(typed) => match *typed.ty.clone() {
+                        syn::Type::Path(path) => {
+                            if path
+                                .path
+                                .segments
+                                .iter()
+                                .find(|seg| {
+                                    seg.ident.to_string() == "Self"
+                                        || seg
+                                            .arguments
+                                            .to_token_stream()
+                                            .to_string()
+                                            .contains("Self")
+                                })
+                                .is_some()
+                            {
+                                let arg_name = &typed.pat;
+                                quote! {
+                                    #arg_name: &Vec<u8>
+                                }
+                            } else {
+                                input.to_token_stream()
+                            }
+                        }
+                        _ => input.to_token_stream(),
+                    },
+                })
+                .collect();
             let method_output = &method.sig.output;
             let method_name_str = method_name.to_string();
-            let values: Vec<_> = method_inputs
+            let values: Vec<_> = method
+                .sig
+                .inputs
                 .iter()
                 .filter_map(|arg| match arg {
                     syn::FnArg::Receiver(_) => None,
@@ -62,13 +99,23 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
                 })
                 .collect();
             quote! {
-                pub async fn #method_name(#method_inputs) #method_output {
+                pub async fn #method_name(#(#method_inputs), *) #method_output {
                     let func = self.handle.get_func(#method_name_str).await.unwrap();
                     func.call_unchecked(&(#(#values),*)).await
                 }
             }
-        } else {
-            item.to_token_stream()
+        }
+        syn::TraitItem::Type(ty) => {
+            let ident_type = &ty.ident;
+
+            generic_types.push(quote! {
+                #ident_type = Vec<u8>
+            });
+            quote! {}
+        }
+
+        _ => {
+            quote! {}
         }
     });
 
@@ -79,14 +126,14 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
         pub struct #callable_trait_ident<P, D> {
-            pub handle: plugy::runtime::PluginHandle<P, D>
+            pub handle: plugy::runtime::PluginHandle<P, D>,
         }
         #[cfg(not(target_arch = "wasm32"))]
         impl<P, D: Send + Clone> #callable_trait_ident<P, D> {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name> {
+        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
             type Output = #callable_trait_ident<P, D>;
             fn into_callable(handle: plugy::runtime::PluginHandle<P, D>) -> Self::Output {
                 #callable_trait_ident { handle }
@@ -189,6 +236,7 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
     let parsed = syn::parse2::<MetaNameValue>(args.into()).unwrap();
     assert_eq!(parsed.path.to_token_stream().to_string(), "file");
     let file_path = parsed.value;
+
     quote! {
         #input
 
@@ -198,6 +246,9 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
                     let res = std::fs::read(#file_path)?;
                     Ok(res)
                 })
+            }
+            fn name(&self) -> &'static str {
+                std::any::type_name::<Self>()
             }
         }
     }.into()
@@ -326,30 +377,30 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
 
     // Generate the code for the context methods
     let generated = quote::quote! {
-            #[cfg(not(target_arch = "wasm32"))]
-            #input
+        #[cfg(not(target_arch = "wasm32"))]
+        #input
 
-            impl #struct_name {
-                pub fn current() -> #struct_name_sync {
-                    #struct_name_sync
-                }
+        impl #struct_name {
+            pub fn current() -> #struct_name_sync {
+                #struct_name_sync
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            impl plugy::runtime::Context for #struct_name {
-                fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
-                    #(#links)*
-                }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        impl plugy::runtime::Context for #struct_name {
+            fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
+                #(#links)*
             }
+        }
 
-            pub struct #struct_name_sync;
+        pub struct #struct_name_sync;
 
-            impl #struct_name_sync {
-                #(#generated_methods)*
-            }
+        impl #struct_name_sync {
+            #(#generated_methods)*
+        }
 
-            #[cfg(target_arch = "wasm32")]
-            #(#externs)*
-        };
+        #[cfg(target_arch = "wasm32")]
+        #(#externs)*
+    };
 
     // Return the generated code as a TokenStream
     generated.into()

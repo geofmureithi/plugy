@@ -3,12 +3,14 @@
 //! The `plugy-runtime` crate serves as the heart of Plugy's dynamic plugin system, enabling the runtime management
 //! and execution of plugins written in WebAssembly (Wasm). It provides functionalities for loading, running,
 //! and interacting with plugins seamlessly within your Rust applications.
+use anyhow::Context as ErrorContext;
 use async_lock::RwLock;
 use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
+use plugy_core::PluginLoader;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 use wasmtime::{Engine, Instance, Module, Store};
 
 pub type CallerStore<D = ()> = Arc<RwLock<Store<Option<RuntimeCaller<D>>>>>;
@@ -96,7 +98,7 @@ impl<P, D: Default + Send> Runtime<P, D> {
     ///
     /// ```rust
     /// use plugy_runtime::Runtime;
-    /// use plugy_runtime::PluginLoader;
+    /// use plugy_core::PluginLoader;
     /// use plugy_macros::*;
     /// use std::future::Future;
     /// use std::pin::Pin;
@@ -116,15 +118,17 @@ impl<P, D: Default + Send> Runtime<P, D> {
     /// ```
     pub async fn load<T: PluginLoader>(&self, loader: T) -> anyhow::Result<P::Output>
     where
-        P: IntoCallable<T, D>,
+        P: IntoCallable<P, D>,
     {
         let bytes = loader.load().await?;
-        let name = std::any::type_name::<T>();
+        let name = loader.name();
         let module = Module::new(&self.engine, bytes)?;
         let instance_pre = self.linker.instantiate_pre(&module)?;
         let mut store: Store<Option<RuntimeCaller<D>>> = Store::new(&self.engine, None);
         let instance = instance_pre.instantiate_async(&mut store).await?;
-        let memory = instance.get_memory(&mut store, "memory").unwrap();
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .context("missing memory")?;
         let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
         let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
         *store.data_mut() = Some(RuntimeCaller {
@@ -141,7 +145,7 @@ impl<P, D: Default + Send> Runtime<P, D> {
                 instance,
             },
         );
-        let plugin = self.get_plugin::<T>()?;
+        let plugin = self.get_plugin_by_name(&name)?;
         Ok(plugin)
     }
 }
@@ -187,11 +191,40 @@ impl<P, D: Send> Runtime<P, D> {
         P: IntoCallable<T, D>,
     {
         let name = std::any::type_name::<T>();
-        let module = self.modules.get(name).unwrap();
+        let module = self
+            .modules
+            .get(name)
+            .context("missing plugin requested, did you forget .load")?;
         Ok(P::into_callable(PluginHandle {
             store: module.store.clone(),
             instance: module.instance,
             inner: PhantomData::<T>,
+        }))
+    }
+
+    /// Retrieves the callable plugin instance with the specified name.
+    ///
+    /// This function returns a callable instance of the loaded plugin with the
+    /// specified name. The plugin must have been previously loaded using
+    /// the `load` method or similar means.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the callable plugin instance on success,
+    /// or an `anyhow::Error` if the instance retrieval encounters any issues.
+    ///
+    pub fn get_plugin_by_name(&self, name: &str) -> anyhow::Result<P::Output>
+    where
+        P: IntoCallable<P, D>,
+    {
+        let module = self
+            .modules
+            .get(name)
+            .context("missing plugin requested, did you forget .load")?;
+        Ok(P::into_callable(PluginHandle {
+            store: module.store.clone(),
+            instance: module.instance,
+            inner: PhantomData::<P>,
         }))
     }
 
@@ -218,7 +251,7 @@ impl<P, D: Send> Runtime<P, D> {
     ///
     /// ```rust
     /// use plugy_runtime::Runtime;
-    /// use plugy_runtime::PluginLoader;
+    /// use plugy_core::PluginLoader;
     /// use plugy_runtime::Context;
     /// use plugy_runtime::Linker;
     /// use plugy_macros::*;
@@ -236,7 +269,7 @@ impl<P, D: Send> Runtime<P, D> {
     /// struct Addr {
     ///     //eg actix or xtra
     /// }
-    /// 
+    ///
     /// impl Context for Addr {
     ///     fn link(&self, linker: &mut Linker<Self>) {
     ///         //expose methods here
@@ -254,18 +287,20 @@ impl<P, D: Send> Runtime<P, D> {
         data_fn: impl Fn(&T) -> D,
     ) -> anyhow::Result<P::Output>
     where
-        P: IntoCallable<T, D>,
+        P: IntoCallable<P, D>,
         D: Context,
     {
         let data = data_fn(&loader);
         data.link(&mut self.linker);
         let bytes = loader.load().await?;
-        let name = std::any::type_name::<T>();
+        let name = loader.name();
         let module = Module::new(&self.engine, bytes)?;
         let instance_pre = self.linker.instantiate_pre(&module)?;
         let mut store: Store<Option<RuntimeCaller<D>>> = Store::new(&self.engine, None);
         let instance = instance_pre.instantiate_async(&mut store).await?;
-        let memory = instance.get_memory(&mut store, "memory").unwrap();
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .context("missing memory")?;
         let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
         let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
 
@@ -284,7 +319,7 @@ impl<P, D: Send> Runtime<P, D> {
             },
         );
 
-        let plugin = self.get_plugin::<T>()?;
+        let plugin = self.get_plugin_by_name(&name)?;
         Ok(plugin)
     }
 }
@@ -394,7 +429,7 @@ impl<P: Serialize, R: DeserializeOwned, D: Send + Clone> Func<P, R, D> {
         let mut store = self.store.write().await;
         let RuntimeCaller {
             memory, alloc_fn, ..
-        } = store.data().clone().unwrap();
+        } = store.data().clone().context("missing data in store")?;
 
         let buffer = bincode::serialize(value)?;
         let len = buffer.len() as _;
@@ -410,26 +445,6 @@ impl<P: Serialize, R: DeserializeOwned, D: Send + Clone> Func<P, R, D> {
         memory.read(&mut *store, ptr as _, &mut buffer)?;
         Ok(bincode::deserialize(&buffer)?)
     }
-}
-
-/// A trait for loading plugin module data asynchronously.
-///
-/// This trait defines the behavior for loading plugin module data asynchronously.
-/// Implementors of this trait provide the ability to asynchronously retrieve
-/// the Wasm module data for a plugin.
-///
-pub trait PluginLoader {
-    /// Asynchronously loads the Wasm module data for the plugin.
-    ///
-    /// This method returns a `Future` that produces a `Result` containing
-    /// the Wasm module data as a `Vec<u8>` on success, or an `anyhow::Error`
-    /// if loading encounters issues.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
-    /// representing the asynchronous loading process.
-    fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
 }
 
 pub trait Context: Sized {

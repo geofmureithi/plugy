@@ -93,6 +93,7 @@ Contributions to plugy are welcome! If you find a bug or want to propose a new f
 - [Wasmtime](https://wasmtime.dev/)
 - Bincode
 - Serde
+- [Wasmtime-Serde](https://github.com/Heraclito-Q-Saldanha/wasmtime_serde) inspired alot of the inner working of this project
 
 License
 
