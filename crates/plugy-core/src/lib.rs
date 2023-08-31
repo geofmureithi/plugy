@@ -10,5 +10,31 @@
 //! - [`bitwise`](bitwise/index.html): A module providing utilities for working with bitwise operations and conversions.
 //! - [`guest`](guest/index.html): A module that facilitates communication between the host application and Wasm plugins.
 //!
+
+use std::{pin::Pin, future::Future};
 pub mod bitwise;
 pub mod guest;
+
+/// A trait for loading plugin module data asynchronously.
+///
+/// This trait defines the behavior for loading plugin module data asynchronously.
+/// Implementors of this trait provide the ability to asynchronously retrieve
+/// the Wasm module data for a plugin.
+///
+pub trait PluginLoader {
+    /// Asynchronously loads the Wasm module data for the plugin.
+    ///
+    /// This method returns a `Future` that produces a `Result` containing
+    /// the Wasm module data as a `Vec<u8>` on success, or an `anyhow::Error`
+    /// if loading encounters issues.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
+    /// representing the asynchronous loading process.
+    fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
+
+    /// A plugins name should be known before loading.
+    /// It might just be `std::any::type_name::<Self>()`
+    fn name(&self) -> &'static str;
+}
