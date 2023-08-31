@@ -300,7 +300,7 @@ impl<P, D: Send> Runtime<P, D> {
         let instance = instance_pre.instantiate_async(&mut store).await?;
         let memory = instance
             .get_memory(&mut store, "memory")
-            .context("missing memory");
+            .context("missing memory")?;
         let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
         let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
 
