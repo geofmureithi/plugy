@@ -251,7 +251,7 @@ impl<P, D: Send> Runtime<P, D> {
     ///
     /// ```rust
     /// use plugy_runtime::Runtime;
-    /// use plugy_runtime::PluginLoader;
+    /// use plugy_core::PluginLoader;
     /// use plugy_runtime::Context;
     /// use plugy_runtime::Linker;
     /// use plugy_macros::*;
