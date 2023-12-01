@@ -11,7 +11,11 @@ struct FooPlugin {
 #[tokio::main]
 async fn main() {
     let mut runtime = Runtime::<Box<dyn Greeter>>::new().unwrap();
-    let runtime = runtime.context(Fetcher).context(Logger);
+    let runtime = runtime
+        // Include the fetcher context
+        .context(Fetcher)
+        // Include the logger context
+        .context(Logger);
     let handle = runtime
         .load(FooPlugin {
             config: "Happy".to_string(),
