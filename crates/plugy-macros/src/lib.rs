@@ -126,18 +126,19 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
     quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
-        pub struct #callable_trait_ident<P, D> {
-            pub handle: plugy::runtime::PluginHandle<P, D>,
+        pub struct #callable_trait_ident<P> {
+            pub handle: plugy::runtime::PluginHandle,
+            inner: std::marker::PhantomData<P>
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D: Send + Clone> #callable_trait_ident<P, D> {
+        impl<P> #callable_trait_ident<P> {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
-            type Output = #callable_trait_ident<P, D>;
-            fn into_callable(handle: plugy::runtime::PluginHandle<P, D>) -> Self::Output {
-                #callable_trait_ident { handle }
+        impl<P> plugy::runtime::IntoCallable<P> for Box<dyn #trait_name<#(#generic_types),*>> {
+            type Output = #callable_trait_ident<P>;
+            fn into_callable(handle: plugy::runtime::PluginHandle) -> Self::Output {
+                #callable_trait_ident { handle, inner: std::marker::PhantomData }
             }
         }
     }
@@ -242,7 +243,7 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
 
         impl PluginLoader for #struct_name {
-            fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
+            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
                 std::boxed::Box::pin(async {
                     let res = std::fs::read(#file_path)?;
                     Ok(res)
@@ -280,7 +281,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                     .sig
                     .inputs
                     .iter()
-                    .skip(2) // Skip &self, &caller
+                    .skip(1) // Skip &caller
                     .map(|arg| {
                         if let FnArg::Typed(pat_type) = arg {
                             pat_type.to_token_stream()
@@ -293,7 +294,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                     .sig
                     .inputs
                     .iter()
-                    .skip(2) // Skip &self, &caller
+                    .skip(1) // Skip &caller
                     .map(|arg| {
                         if let FnArg::Typed(pat_type) = arg {
                             pat_type.pat.to_token_stream()
@@ -321,7 +322,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                         .func_wrap1_async(
                             "env",
                             #extern_method_name_str,
-                            move |mut caller: plugy::runtime::Caller<#struct_name>,
+                            move |mut caller: plugy::runtime::Caller<plugy::runtime::Plugin>,
                                 ptr: u64|
                                 -> Box<dyn std::future::Future<Output = u64> + Send> {
                                 use plugy::core::bitwise::{from_bitwise, into_bitwise};
@@ -331,7 +332,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                                         memory,
                                         alloc_fn,
                                         dealloc_fn,
-                                        data: ctx,
+                                        plugin
                                     } = store;
 
                                     let (ptr, len) = from_bitwise(ptr);
@@ -343,7 +344,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                                         .unwrap();
                                     let (#(#method_pats),*) = bincode::deserialize(&buffer).unwrap();
                                     let buffer =
-                                        bincode::serialize(&ctx.#method_name(&caller, #(#method_pats),*).await)
+                                        bincode::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
                                             .unwrap();
                                     let ptr = alloc_fn
                                         .call_async(&mut caller, buffer.len() as _)
@@ -359,7 +360,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
 
                 Some(quote! {
                     #[allow(unused_variables)]
-                    pub fn #method_name(&self, #(#method_args),*) #return_type {
+                    pub fn #method_name(#(#method_args),*) #return_type {
                         #[cfg(target_arch = "wasm32")]
                         {
                             let args = (#(#method_pats),*);
@@ -381,7 +382,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
         #input
         #[cfg(not(target_arch = "wasm32"))]
         impl plugy::runtime::Context for #struct_name {
-            fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
+            fn link(&self, linker: &mut plugy::runtime::Linker<plugy::runtime::Plugin>) {
                 #(#links)*
             }
         }
