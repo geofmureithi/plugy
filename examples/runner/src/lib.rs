@@ -1,8 +1,10 @@
+use serde::{Serialize, Deserialize};
+
 #[plugy::macros::plugin]
 pub trait Greeter {
     fn greet(&self, name: String, last_name: Option<String>) -> String;
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Fetcher;
 
 #[plugy::macros::context]

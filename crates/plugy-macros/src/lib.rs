@@ -4,6 +4,7 @@
 //! bindings and interfaces for plugy's dynamic plugin system. These macros enhance the ergonomics of
 //! working with plugins written in WebAssembly (Wasm) within your Rust applications.
 //!
+use convert_case::{Casing, Case};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
@@ -262,7 +263,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
     // Get the name of the struct being implemented
     let struct_name = &input.self_ty.to_token_stream();
 
-    let struct_name_sync = Ident::new(&format!("{struct_name}Sync"), Span::call_site());
+    let mod_name = Ident::new(&struct_name.to_string().to_case(Case::Snake), Span::call_site());
 
     let mut externs = Vec::new();
 
@@ -340,9 +341,9 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                                         .call_async(&mut caller, into_bitwise(ptr, len))
                                         .await
                                         .unwrap();
-                                    let message: (String,) = bincode::deserialize(&buffer).unwrap();
+                                    let (#(#method_pats),*) = bincode::deserialize(&buffer).unwrap();
                                     let buffer =
-                                        bincode::serialize(&ctx.fetch(&caller, message.0).await)
+                                        bincode::serialize(&ctx.#method_name(&caller, #(#method_pats),*).await)
                                             .unwrap();
                                     let ptr = alloc_fn
                                         .call_async(&mut caller, buffer.len() as _)
@@ -374,32 +375,33 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
             }
         })
         .collect::<Vec<_>>();
-
     // Generate the code for the context methods
     let generated = quote::quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #input
-
-        impl #struct_name {
-            pub fn current() -> #struct_name_sync {
-                #struct_name_sync
-            }
-        }
         #[cfg(not(target_arch = "wasm32"))]
         impl plugy::runtime::Context for #struct_name {
             fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
                 #(#links)*
             }
         }
-
-        pub struct #struct_name_sync;
-
-        impl #struct_name_sync {
-            #(#generated_methods)*
+        
+        impl #struct_name {
+            pub fn get(&self) -> #mod_name::sync::#struct_name {
+                #mod_name::sync::#struct_name
+            }
         }
+        pub mod #mod_name {
+            pub mod sync {
+                #[cfg(target_arch = "wasm32")]
+                #(#externs)*
 
-        #[cfg(target_arch = "wasm32")]
-        #(#externs)*
+                pub struct #struct_name;
+                impl #struct_name {
+                    #(#generated_methods)*
+                }
+        }
+    }
     };
 
     // Return the generated code as a TokenStream
