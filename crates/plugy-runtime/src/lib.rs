@@ -274,30 +274,30 @@ impl<T> Runtime<T> {
     /// # Examples
     ///
     /// ```rust
-    /// use plugy_runtime::Plugin;
+    /// use plugy_runtime::Plugin as KasukuPlugin;
     /// use plugy_runtime::Runtime;
     /// use plugy_core::PluginLoader;
     /// use plugy_macros::*;
     /// use std::future::Future;
     /// use std::pin::Pin;
     /// #[plugy_macros::plugin]
-    /// trait Greeter {
+    /// trait Plugin {
     ///     fn do_stuff(&self, input: &str);
     /// }
     ///
     /// // impl Plugin for MyPlugin goes to the wasm file
     /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
     /// struct MyPlugin;
-    /// impl From<MyPlugin> for Plugin {
+    /// impl From<MyPlugin> for KasukuPlugin {
     ///     fn from(val: MyPlugin) -> Self {
-    ///         Plugin {
+    ///         KasukuPlugin {
     ///             name: "MyPlugin".to_string(),
     ///             data: Default::default(),
     ///             plugin_type: "MyPlugin".to_string(),
     ///         }
     ///     }
     /// }
-    /// async fn example(runtime: &Runtime<Box<dyn Greeter>>) -> anyhow::Result<()> {
+    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
     ///     let plugin = runtime.load(MyPlugin).await?;
     ///     Ok(())
     /// }
