@@ -49,17 +49,17 @@ pub struct Runtime<T, P = Plugin> {
     structure: PhantomData<T>,
 }
 
-pub trait IntoCallable<P> {
+pub trait IntoCallable<P, D> {
     type Output;
-    fn into_callable(handle: PluginHandle) -> Self::Output;
+    fn into_callable(handle: PluginHandle<Plugin<D>>) -> Self::Output;
 }
 
 /// A concrete type that represents a wasm plugin and its state
 #[derive(Debug, Clone)]
 pub struct Plugin<D = Vec<u8>> {
-    name: String,
-    plugin_type: String,
-    data: D,
+    pub name: String,
+    pub plugin_type: String,
+    pub data: D,
 }
 
 impl Plugin {
@@ -109,6 +109,138 @@ impl<P: std::fmt::Debug> fmt::Debug for RuntimeCaller<P> {
     }
 }
 
+impl<T, D: Send> Runtime<T, Plugin<D>> {
+    /// Loads a plugin using the provided loader and returns the plugin instance.
+    ///
+    /// This asynchronous function loads a plugin by calling the `load` method on
+    /// the provided `PluginLoader` instance. It then prepares the plugin for execution,
+    /// instantiates it, and returns the plugin instance wrapped in the appropriate
+    /// callable type.
+    ///
+    /// # Parameters
+    ///
+    /// - `loader`: An instance of a type that implements the `PluginLoader` trait,
+    ///   responsible for loading the plugin's Wasm module data.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the loaded plugin instance on success,
+    /// or an `anyhow::Error` if the loading and instantiation process encounters any issues.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use plugy_runtime::Runtime;
+    /// use plugy_core::PluginLoader;
+    /// use plugy_macros::*;
+    /// use std::future::Future;
+    /// use std::pin::Pin;
+    /// #[plugy_macros::plugin]
+    /// trait Plugin {
+    ///     fn do_stuff(&self);
+    /// }
+    ///
+    /// // impl Plugin for MyPlugin goes to the wasm file
+    /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
+    /// struct MyPlugin;
+    ///
+    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
+    ///     let plugin = runtime.load(MyPlugin).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn load_with<P: Send + PluginLoader + Into<Plugin<D>>>(
+        &self,
+        plugin: P,
+    ) -> anyhow::Result<T::Output>
+    where
+        T: IntoCallable<P, D>,
+    {
+        let bytes = plugin.bytes().await?;
+        let name = plugin.name();
+        let module = Module::new(&self.engine, bytes)?;
+        let instance_pre = self.linker.instantiate_pre(&module)?;
+        let mut store: Store<Option<RuntimeCaller<Plugin<D>>>> = Store::new(&self.engine, None);
+        let instance = instance_pre.instantiate_async(&mut store).await?;
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .context("missing memory")?;
+        let alloc_fn = instance.get_typed_func(&mut store, "alloc")?;
+        let dealloc_fn = instance.get_typed_func(&mut store, "dealloc")?;
+        *store.data_mut() = Some(RuntimeCaller {
+            memory,
+            alloc_fn,
+            dealloc_fn,
+            plugin: plugin.into(),
+        });
+        self.modules.insert(
+            name,
+            RuntimeModule {
+                inner: module.clone(),
+                store: Arc::new(RwLock::new(store)),
+                instance,
+            },
+        );
+        let plugin = self.get_plugin_by_name::<P>(&name)?;
+        Ok(plugin)
+    }
+
+    /// Retrieves the callable plugin instance with the specified name.
+    ///
+    /// This function returns a callable instance of the loaded plugin with the
+    /// specified name. The plugin must have been previously loaded using
+    /// the `load` method or similar means.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the callable plugin instance on success,
+    /// or an `anyhow::Error` if the instance retrieval encounters any issues.
+    ///
+    pub fn get_plugin_by_name<P: Send + PluginLoader>(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<T::Output>
+    where
+        T: IntoCallable<P, D>,
+    {
+        let module = self
+            .modules
+            .get(name)
+            .context("missing plugin requested, did you forget .load")?;
+        Ok(T::into_callable(PluginHandle {
+            store: module.store.clone(),
+            instance: module.instance,
+        }))
+    }
+
+    /// Retrieves the callable plugin instance for the specified type.
+    ///
+    /// This function returns a callable instance of the loaded plugin for the
+    /// specified type `T`. The plugin must have been previously loaded using
+    /// the `load` method or similar means.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the callable plugin instance on success,
+    /// or an `anyhow::Error` if the instance retrieval encounters any issues.
+    ///
+    pub fn get_plugin<P: Send + PluginLoader>(&self) -> anyhow::Result<T::Output>
+    where
+        T: IntoCallable<P, D>,
+    {
+        let name = std::any::type_name::<P>();
+        let module = self
+            .modules
+            .get(name)
+            .context("missing plugin requested, did you forget .load")?;
+        Ok(T::into_callable(PluginHandle {
+            store: module.store.clone(),
+            instance: module.instance,
+        }))
+    }
+}
+
+
 impl<T> Runtime<T> {
     /// Loads a plugin using the provided loader and returns the plugin instance.
     ///
@@ -149,9 +281,12 @@ impl<T> Runtime<T> {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn load<P: Send + PluginLoader + Into<Plugin>>(&self, plugin: P) -> anyhow::Result<T::Output>
+    pub async fn load<P: Send + PluginLoader + Into<Plugin>>(
+        &self,
+        plugin: P,
+    ) -> anyhow::Result<T::Output>
     where
-        T: IntoCallable<P>,
+        T: IntoCallable<P, Vec<u8>>,
     {
         let bytes = plugin.bytes().await?;
         let name = plugin.name();
@@ -183,7 +318,7 @@ impl<T> Runtime<T> {
     }
 }
 
-impl<T> Runtime<T> {
+impl<T, P> Runtime<T, P> {
     /// Creates a new instance of the `Runtime` with default configuration.
     ///
     /// This function initializes a `Runtime` instance using the default configuration
@@ -207,61 +342,9 @@ impl<T> Runtime<T> {
             structure: PhantomData,
         })
     }
+}
 
-    /// Retrieves the callable plugin instance for the specified type.
-    ///
-    /// This function returns a callable instance of the loaded plugin for the
-    /// specified type `T`. The plugin must have been previously loaded using
-    /// the `load` method or similar means.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the callable plugin instance on success,
-    /// or an `anyhow::Error` if the instance retrieval encounters any issues.
-    ///
-    pub fn get_plugin<P: Send + PluginLoader>(&self) -> anyhow::Result<T::Output>
-    where
-        T: IntoCallable<P>,
-    {
-        let name = std::any::type_name::<P>();
-        let module = self
-            .modules
-            .get(name)
-            .context("missing plugin requested, did you forget .load")?;
-        Ok(T::into_callable(PluginHandle {
-            store: module.store.clone(),
-            instance: module.instance,
-        }))
-    }
-
-    /// Retrieves the callable plugin instance with the specified name.
-    ///
-    /// This function returns a callable instance of the loaded plugin with the
-    /// specified name. The plugin must have been previously loaded using
-    /// the `load` method or similar means.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the callable plugin instance on success,
-    /// or an `anyhow::Error` if the instance retrieval encounters any issues.
-    ///
-    pub fn get_plugin_by_name<P: Send + PluginLoader>(
-        &self,
-        name: &str,
-    ) -> anyhow::Result<T::Output>
-    where
-        T: IntoCallable<P>,
-    {
-        let module = self
-            .modules
-            .get(name)
-            .context("missing plugin requested, did you forget .load")?;
-        Ok(T::into_callable(PluginHandle {
-            store: module.store.clone(),
-            instance: module.instance,
-        }))
-    }
-
+impl<T, D> Runtime<T, Plugin<D>> {
     /// Allows exposing methods that will run on the runtime side
     /// ```rust
     /// #[derive(Debug)]
@@ -280,7 +363,7 @@ impl<T> Runtime<T> {
     /// }
     /// ````
 
-    pub fn context<C: Context>(&mut self, ctx: C) -> &mut Self {
+    pub fn context<C: Context<D>>(&mut self, ctx: C) -> &mut Self {
         ctx.link(&mut self.linker);
         self
     }
@@ -302,7 +385,7 @@ pub struct PluginHandle<P = Plugin> {
     store: CallerStore<P>,
 }
 
-impl PluginHandle {
+impl<D> PluginHandle<Plugin<D>> {
     /// Retrieves a typed function interface from the loaded plugin instance.
     ///
     /// This method enables retrieving a typed function interface for a specific
@@ -327,7 +410,7 @@ impl PluginHandle {
     pub async fn get_func<I: Serialize, R: DeserializeOwned>(
         &self,
         name: &str,
-    ) -> anyhow::Result<Func<Plugin, I, R>> {
+    ) -> anyhow::Result<Func<Plugin<D>, I, R>> {
         let store = self.store.clone();
         let inner_wasm_fn = self.instance.get_typed_func::<u64, u64>(
             &mut *store.write().await,
@@ -349,7 +432,7 @@ pub struct Func<P, I: Serialize, R: DeserializeOwned> {
     output: PhantomData<R>,
 }
 
-impl<R: DeserializeOwned, I: Serialize> Func<Plugin, I, R> {
+impl<P: Send + Clone, R: DeserializeOwned, I: Serialize> Func<P, I, R> {
     /// Invokes the plugin function with the provided input, returning the result.
     ///
     /// This asynchronous method calls the plugin function using the provided input data
@@ -403,6 +486,6 @@ impl<R: DeserializeOwned, I: Serialize> Func<Plugin, I, R> {
     }
 }
 
-pub trait Context<P = Plugin>: Sized {
-    fn link(&self, linker: &mut Linker<P>);
+pub trait Context<D = Vec<u8>>: Sized {
+    fn link(&self, linker: &mut Linker<Plugin<D>>);
 }

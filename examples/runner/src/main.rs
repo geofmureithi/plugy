@@ -1,24 +1,37 @@
-use plugy::{core::PluginLoader, macros::plugin_import, runtime::Runtime};
-use serde::Serialize;
-use shared::{Fetcher, Greeter, Logger};
+use plugy::{
+    core::PluginLoader,
+    macros::plugin_import,
+    runtime::{Plugin, Runtime},
+};
+use shared::{Addr, Fetcher, Greeter, Logger, Printer};
+use xtra::Mailbox;
 
 #[plugin_import(file = "target/wasm32-unknown-unknown/debug/foo_plugin.wasm")]
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 struct FooPlugin {
-    config: String,
+    addr: Addr,
+}
+impl Into<Plugin<Addr>> for FooPlugin {
+    fn into(self) -> Plugin<Addr> {
+        Plugin {
+            name: "FooPlugin".to_string(),
+            data: self.addr,
+            plugin_type: "FooPlugin".to_string(),
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() {
-    let mut runtime = Runtime::<Box<dyn Greeter>>::new().unwrap();
+    let mut runtime = Runtime::<Box<dyn Greeter>, Plugin<Addr>>::new().unwrap();
     let runtime = runtime
         // Include the fetcher context
         .context(Fetcher)
         // Include the logger context
         .context(Logger);
     let handle = runtime
-        .load(FooPlugin {
-            config: "Happy".to_string(),
+        .load_with(FooPlugin {
+            addr: xtra::spawn_tokio(Printer::default(), Mailbox::unbounded()),
         })
         .await
         .unwrap();

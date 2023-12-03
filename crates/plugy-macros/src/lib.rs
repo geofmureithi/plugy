@@ -4,7 +4,7 @@
 //! bindings and interfaces for plugy's dynamic plugin system. These macros enhance the ergonomics of
 //! working with plugins written in WebAssembly (Wasm) within your Rust applications.
 //!
-use convert_case::{Casing, Case};
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
@@ -126,18 +126,18 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
     quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
-        pub struct #callable_trait_ident<P> {
-            pub handle: plugy::runtime::PluginHandle,
+        pub struct #callable_trait_ident<P, D> {
+            pub handle: plugy::runtime::PluginHandle<Plugin<D>>,
             inner: std::marker::PhantomData<P>
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P> #callable_trait_ident<P> {
+        impl<P, D: Clone + Send> #callable_trait_ident<P, D> {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P> plugy::runtime::IntoCallable<P> for Box<dyn #trait_name<#(#generic_types),*>> {
-            type Output = #callable_trait_ident<P>;
-            fn into_callable(handle: plugy::runtime::PluginHandle) -> Self::Output {
+        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
+            type Output = #callable_trait_ident<P, D>;
+            fn into_callable(handle: plugy::runtime::PluginHandle<Plugin<D>>) -> Self::Output {
                 #callable_trait_ident { handle, inner: std::marker::PhantomData }
             }
         }
@@ -257,14 +257,26 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
+pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
     // Parse the input as an ItemImpl
     let input = parse_macro_input!(input as ItemImpl);
+
+    let data_ident = &args
+        .into_iter()
+        .skip(2)
+        .next()
+        .map(|d| Ident::new(&d.to_string(), d.span().into()))
+        .unwrap_or(Ident::new("_", Span::call_site()));
 
     // Get the name of the struct being implemented
     let struct_name = &input.self_ty.to_token_stream();
 
-    let mod_name = Ident::new(&struct_name.to_string().to_case(Case::Snake), Span::call_site());
+    // panic!("{}", &struct_name.to_string());
+
+    let mod_name = Ident::new(
+        &struct_name.to_string().to_case(Case::Snake),
+        Span::call_site(),
+    );
 
     let mut externs = Vec::new();
 
@@ -322,7 +334,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                         .func_wrap1_async(
                             "env",
                             #extern_method_name_str,
-                            move |mut caller: plugy::runtime::Caller<plugy::runtime::Plugin>,
+                            move |mut caller: plugy::runtime::Caller<_>,
                                 ptr: u64|
                                 -> Box<dyn std::future::Future<Output = u64> + Send> {
                                 use plugy::core::bitwise::{from_bitwise, into_bitwise};
@@ -381,12 +393,12 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
         #[cfg(not(target_arch = "wasm32"))]
         #input
         #[cfg(not(target_arch = "wasm32"))]
-        impl plugy::runtime::Context for #struct_name {
-            fn link(&self, linker: &mut plugy::runtime::Linker<plugy::runtime::Plugin>) {
+        impl plugy::runtime::Context<#data_ident> for #struct_name {
+            fn link(&self, linker: &mut plugy::runtime::Linker<plugy::runtime::Plugin<#data_ident>>) {
                 #(#links)*
             }
         }
-        
+
         impl #struct_name {
             pub fn get(&self) -> #mod_name::sync::#struct_name {
                 #mod_name::sync::#struct_name
