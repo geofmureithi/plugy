@@ -4,6 +4,7 @@
 //! bindings and interfaces for plugy's dynamic plugin system. These macros enhance the ergonomics of
 //! working with plugins written in WebAssembly (Wasm) within your Rust applications.
 //!
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
@@ -61,20 +62,10 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
                     FnArg::Receiver(_) => input.to_token_stream(),
                     FnArg::Typed(typed) => match *typed.ty.clone() {
                         syn::Type::Path(path) => {
-                            if path
-                                .path
-                                .segments
-                                .iter()
-                                .find(|seg| {
-                                    seg.ident.to_string() == "Self"
-                                        || seg
-                                            .arguments
-                                            .to_token_stream()
-                                            .to_string()
-                                            .contains("Self")
-                                })
-                                .is_some()
-                            {
+                            if path.path.segments.iter().any(|seg| {
+                                seg.ident == "Self"
+                                    || seg.arguments.to_token_stream().to_string().contains("Self")
+                            }) {
                                 let arg_name = &typed.pat;
                                 quote! {
                                     #arg_name: &Vec<u8>
@@ -126,17 +117,18 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
         pub struct #callable_trait_ident<P, D> {
-            pub handle: plugy::runtime::PluginHandle<P, D>,
+            pub handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>,
+            inner: std::marker::PhantomData<P>
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D: Send + Clone> #callable_trait_ident<P, D> {
+        impl<P, D: Clone + Send> #callable_trait_ident<P, D> {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
         impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
             type Output = #callable_trait_ident<P, D>;
-            fn into_callable(handle: plugy::runtime::PluginHandle<P, D>) -> Self::Output {
-                #callable_trait_ident { handle }
+            fn into_callable(handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>) -> Self::Output {
+                #callable_trait_ident { handle, inner: std::marker::PhantomData }
             }
         }
     }
@@ -241,7 +233,7 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
 
         impl PluginLoader for #struct_name {
-            fn load(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
+            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
                 std::boxed::Box::pin(async {
                     let res = std::fs::read(#file_path)?;
                     Ok(res)
@@ -255,14 +247,23 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
+pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
     // Parse the input as an ItemImpl
     let input = parse_macro_input!(input as ItemImpl);
+
+    let data_ident = &args
+        .into_iter()
+        .nth(2)
+        .map(|d| Ident::new(&d.to_string(), d.span().into()))
+        .unwrap_or(Ident::new("_", Span::call_site()));
 
     // Get the name of the struct being implemented
     let struct_name = &input.self_ty.to_token_stream();
 
-    let struct_name_sync = Ident::new(&format!("{struct_name}Sync"), Span::call_site());
+    let mod_name = Ident::new(
+        &struct_name.to_string().to_case(Case::Snake),
+        Span::call_site(),
+    );
 
     let mut externs = Vec::new();
 
@@ -274,12 +275,13 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .filter_map(|item| {
             if let syn::ImplItem::Fn(method) = item {
+                let generics = &method.sig.generics;
                 let method_name = &method.sig.ident;
                 let method_args: Vec<_> = method
                     .sig
                     .inputs
                     .iter()
-                    .skip(2) // Skip &self, &caller
+                    .skip(1) // Skip &caller
                     .map(|arg| {
                         if let FnArg::Typed(pat_type) = arg {
                             pat_type.to_token_stream()
@@ -292,7 +294,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                     .sig
                     .inputs
                     .iter()
-                    .skip(2) // Skip &self, &caller
+                    .skip(1) // Skip &caller
                     .map(|arg| {
                         if let FnArg::Typed(pat_type) = arg {
                             pat_type.pat.to_token_stream()
@@ -320,7 +322,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                         .func_wrap1_async(
                             "env",
                             #extern_method_name_str,
-                            move |mut caller: plugy::runtime::Caller<#struct_name>,
+                            move |mut caller: plugy::runtime::Caller<_>,
                                 ptr: u64|
                                 -> Box<dyn std::future::Future<Output = u64> + Send> {
                                 use plugy::core::bitwise::{from_bitwise, into_bitwise};
@@ -330,7 +332,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                                         memory,
                                         alloc_fn,
                                         dealloc_fn,
-                                        data: ctx,
+                                        plugin
                                     } = store;
 
                                     let (ptr, len) = from_bitwise(ptr);
@@ -340,9 +342,9 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
                                         .call_async(&mut caller, into_bitwise(ptr, len))
                                         .await
                                         .unwrap();
-                                    let message: (String,) = bincode::deserialize(&buffer).unwrap();
+                                    let (#(#method_pats),*) = bincode::deserialize(&buffer).unwrap();
                                     let buffer =
-                                        bincode::serialize(&ctx.fetch(&caller, message.0).await)
+                                        bincode::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
                                             .unwrap();
                                     let ptr = alloc_fn
                                         .call_async(&mut caller, buffer.len() as _)
@@ -358,7 +360,7 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
 
                 Some(quote! {
                     #[allow(unused_variables)]
-                    pub fn #method_name(&self, #(#method_args),*) #return_type {
+                    pub fn #method_name #generics (#(#method_args),*) #return_type {
                         #[cfg(target_arch = "wasm32")]
                         {
                             let args = (#(#method_pats),*);
@@ -374,32 +376,33 @@ pub fn context(_: TokenStream, input: TokenStream) -> TokenStream {
             }
         })
         .collect::<Vec<_>>();
-
     // Generate the code for the context methods
     let generated = quote::quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #input
-
-        impl #struct_name {
-            pub fn current() -> #struct_name_sync {
-                #struct_name_sync
-            }
-        }
         #[cfg(not(target_arch = "wasm32"))]
-        impl plugy::runtime::Context for #struct_name {
-            fn link(&self, linker: &mut plugy::runtime::Linker<Self>) {
+        impl plugy::runtime::Context<#data_ident> for #struct_name {
+            fn link(&self, linker: &mut plugy::runtime::Linker<plugy::runtime::Plugin<#data_ident>>) {
                 #(#links)*
             }
         }
 
-        pub struct #struct_name_sync;
-
-        impl #struct_name_sync {
-            #(#generated_methods)*
+        impl #struct_name {
+            pub fn get(&self) -> #mod_name::sync::#struct_name {
+                #mod_name::sync::#struct_name
+            }
         }
+        pub mod #mod_name {
+            pub mod sync {
+                #[cfg(target_arch = "wasm32")]
+                #(#externs)*
 
-        #[cfg(target_arch = "wasm32")]
-        #(#externs)*
+                pub struct #struct_name;
+                impl #struct_name {
+                    #(#generated_methods)*
+                }
+        }
+    }
     };
 
     // Return the generated code as a TokenStream

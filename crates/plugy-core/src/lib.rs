@@ -32,7 +32,7 @@ pub trait PluginLoader {
     ///
     /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
     /// representing the asynchronous loading process.
-    fn load(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
+    fn bytes(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
 
     /// A plugins name should be known before loading.
     /// It might just be `std::any::type_name::<Self>()`
