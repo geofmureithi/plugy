@@ -1,12 +1,12 @@
 [package]
 name = "plugy-macros"
 description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 readme = "../../README.md"
 categories = ["wasm"]
 keywords = ["plugin", "wasi", "inventory", "wasm", "plugy"]
-license = "GPL-3.0-only"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/geofmureithi/plugy"
 
 [lib]
