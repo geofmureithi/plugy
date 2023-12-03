@@ -20,7 +20,7 @@ To use plugy in your Rust project, follow these steps:
 
 1. Write your plugin trait:
 
-```rust
+```rust,ignore
 #[plugy::plugin]
 trait Greeter {
     fn greet(&self) -> String;
@@ -29,7 +29,7 @@ trait Greeter {
 
 2. Write your first plugin implementation
 
-```rust
+```rust,ignore
 #[derive(Debug, Deserialize)]
 struct FooPlugin;
 
@@ -43,13 +43,13 @@ impl Greeter for FooPlugin {
 
 Compile it!
 
-```
+```bash,ignore
 cargo build --target wasm32-unknown-unknown
 ```
 
 3. Import and run
 
-```rust
+```rust,ignore
 #[plugin_import(file = "target/wasm32-unknown-unknown/debug/foo_plugin.wasm")]
 struct FooPlugin;
 

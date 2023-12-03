@@ -62,20 +62,10 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
                     FnArg::Receiver(_) => input.to_token_stream(),
                     FnArg::Typed(typed) => match *typed.ty.clone() {
                         syn::Type::Path(path) => {
-                            if path
-                                .path
-                                .segments
-                                .iter()
-                                .find(|seg| {
-                                    seg.ident.to_string() == "Self"
-                                        || seg
-                                            .arguments
-                                            .to_token_stream()
-                                            .to_string()
-                                            .contains("Self")
-                                })
-                                .is_some()
-                            {
+                            if path.path.segments.iter().any(|seg| {
+                                seg.ident == "Self"
+                                    || seg.arguments.to_token_stream().to_string().contains("Self")
+                            }) {
                                 let arg_name = &typed.pat;
                                 quote! {
                                     #arg_name: &Vec<u8>
@@ -263,15 +253,12 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let data_ident = &args
         .into_iter()
-        .skip(2)
-        .next()
+        .nth(2)
         .map(|d| Ident::new(&d.to_string(), d.span().into()))
         .unwrap_or(Ident::new("_", Span::call_site()));
 
     // Get the name of the struct being implemented
     let struct_name = &input.self_ty.to_token_stream();
-
-    // panic!("{}", &struct_name.to_string());
 
     let mod_name = Ident::new(
         &struct_name.to_string().to_case(Case::Snake),
@@ -288,6 +275,7 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .filter_map(|item| {
             if let syn::ImplItem::Fn(method) = item {
+                let generics = &method.sig.generics;
                 let method_name = &method.sig.ident;
                 let method_args: Vec<_> = method
                     .sig
@@ -372,7 +360,7 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 Some(quote! {
                     #[allow(unused_variables)]
-                    pub fn #method_name(#(#method_args),*) #return_type {
+                    pub fn #method_name #generics (#(#method_args),*) #return_type {
                         #[cfg(target_arch = "wasm32")]
                         {
                             let args = (#(#method_pats),*);

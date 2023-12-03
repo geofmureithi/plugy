@@ -11,11 +11,11 @@ use xtra::Mailbox;
 struct FooPlugin {
     addr: Addr,
 }
-impl Into<Plugin<Addr>> for FooPlugin {
-    fn into(self) -> Plugin<Addr> {
+impl From<FooPlugin> for Plugin<Addr> {
+    fn from(val: FooPlugin) -> Self {
         Plugin {
             name: "FooPlugin".to_string(),
-            data: self.addr,
+            data: val.addr,
             plugin_type: "FooPlugin".to_string(),
         }
     }

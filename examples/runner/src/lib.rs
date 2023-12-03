@@ -13,8 +13,7 @@ pub struct Fetcher;
 #[plugy::macros::context(data = Addr)]
 impl Fetcher {
     pub async fn fetch(_: &mut plugy::runtime::Caller<'_, Plugin<Addr>>, url: String) -> String {
-        let body = reqwest::get(url).await.unwrap().text().await.unwrap();
-        body
+        reqwest::get(url).await.unwrap().text().await.unwrap()
     }
 }
 

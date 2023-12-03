@@ -181,7 +181,7 @@ impl<T, D: Send> Runtime<T, Plugin<D>> {
                 instance,
             },
         );
-        let plugin = self.get_plugin_by_name::<P>(&name)?;
+        let plugin = self.get_plugin_by_name::<P>(name)?;
         Ok(plugin)
     }
 
@@ -313,7 +313,7 @@ impl<T> Runtime<T> {
                 instance,
             },
         );
-        let plugin = self.get_plugin_by_name::<P>(&name)?;
+        let plugin = self.get_plugin_by_name::<P>(name)?;
         Ok(plugin)
     }
 }
@@ -356,11 +356,9 @@ impl<T, D> Runtime<T, Plugin<D>> {
     ///         dbg!(text);
     ///     }
     /// }
-    /// fn main() {
-    ///     let mut runtime = Runtime::<Box<dyn Greeter>>::new().unwrap();
-    ///     let runtime = runtime
-    ///         .context(Logger);
-    /// }
+    /// let mut runtime = Runtime::<Box<dyn Greeter>>::new().unwrap();
+    /// let runtime = runtime
+    ///     .context(Logger);
     /// ````
 
     pub fn context<C: Context<D>>(&mut self, ctx: C) -> &mut Self {
