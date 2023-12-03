@@ -571,7 +571,7 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "foo-plugin"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "plugy",
  "runner",
@@ -1205,7 +1205,7 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "plugy"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "plugy-core",
  "plugy-macros",
@@ -1214,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "plugy-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "plugy-macros"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "convert_case",
  "darling",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "plugy-runtime"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-lock",
@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
