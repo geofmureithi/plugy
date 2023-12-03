@@ -97,7 +97,7 @@ Contributions to plugy are welcome! If you find a bug or want to propose a new f
 
 License
 
-This project is licensed under the GNU General Public License.
+This project is licensed under the MIT OR Apache-2.0 License.
 
 <!-- Badges -->
 
