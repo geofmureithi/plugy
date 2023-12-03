@@ -42,10 +42,10 @@ pub type Linker<D = Plugin> = wasmtime::Linker<Option<RuntimeCaller<D>>>;
 /// let runtime = Runtime::<Box<dyn Plugin>>::new();
 /// // Load and manage plugins...
 /// ```
-pub struct Runtime<T> {
+pub struct Runtime<T, P = Plugin> {
     engine: Engine,
-    linker: Linker<Plugin>,
-    modules: DashMap<&'static str, RuntimeModule<Plugin>>,
+    linker: Linker<P>,
+    modules: DashMap<&'static str, RuntimeModule<P>>,
     structure: PhantomData<T>,
 }
 
@@ -54,13 +54,12 @@ pub trait IntoCallable<P> {
     fn into_callable(handle: PluginHandle) -> Self::Output;
 }
 
-
 /// A concrete type that represents a wasm plugin and its state
 #[derive(Debug, Clone)]
-pub struct Plugin {
+pub struct Plugin<D = Vec<u8>> {
     name: String,
     plugin_type: String,
-    data: Vec<u8>,
+    data: D,
 }
 
 impl Plugin {
@@ -76,7 +75,7 @@ impl Plugin {
         bincode::deserialize(&self.data)
     }
 
-    pub fn update<T: Serialize>(&mut self, value: &T){
+    pub fn update<T: Serialize>(&mut self, value: &T) {
         self.data = bincode::serialize(value).unwrap()
     }
 }
@@ -150,7 +149,7 @@ impl<T> Runtime<T> {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn load<P: PluginLoader + Serialize>(&self, plugin: P) -> anyhow::Result<T::Output>
+    pub async fn load<P: Send + PluginLoader + Into<Plugin>>(&self, plugin: P) -> anyhow::Result<T::Output>
     where
         T: IntoCallable<P>,
     {
@@ -169,11 +168,7 @@ impl<T> Runtime<T> {
             memory,
             alloc_fn,
             dealloc_fn,
-            plugin: Plugin {
-                data: bincode::serialize(&plugin).unwrap(),
-                name: name.to_owned(),
-                plugin_type: std::any::type_name::<P>().to_owned(),
-            },
+            plugin: plugin.into(),
         });
         self.modules.insert(
             name,
@@ -224,7 +219,7 @@ impl<T> Runtime<T> {
     /// Returns a `Result` containing the callable plugin instance on success,
     /// or an `anyhow::Error` if the instance retrieval encounters any issues.
     ///
-    pub fn get_plugin<P>(&self) -> anyhow::Result<T::Output>
+    pub fn get_plugin<P: Send + PluginLoader>(&self) -> anyhow::Result<T::Output>
     where
         T: IntoCallable<P>,
     {
@@ -250,7 +245,10 @@ impl<T> Runtime<T> {
     /// Returns a `Result` containing the callable plugin instance on success,
     /// or an `anyhow::Error` if the instance retrieval encounters any issues.
     ///
-    pub fn get_plugin_by_name<P>(&self, name: &str) -> anyhow::Result<T::Output>
+    pub fn get_plugin_by_name<P: Send + PluginLoader>(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<T::Output>
     where
         T: IntoCallable<P>,
     {
@@ -263,6 +261,24 @@ impl<T> Runtime<T> {
             instance: module.instance,
         }))
     }
+
+    /// Allows exposing methods that will run on the runtime side
+    /// ```rust
+    /// #[derive(Debug)]
+    /// pub struct Logger;
+    ///
+    /// #[plugy::macros::context]
+    /// impl Logger {
+    ///     pub async fn log(_: &mut plugy::runtime::Caller<'_>, text: &str) {
+    ///         dbg!(text);
+    ///     }
+    /// }
+    /// fn main() {
+    ///     let mut runtime = Runtime::<Box<dyn Greeter>>::new().unwrap();
+    ///     let runtime = runtime
+    ///         .context(Logger);
+    /// }
+    /// ````
 
     pub fn context<C: Context>(&mut self, ctx: C) -> &mut Self {
         ctx.link(&mut self.linker);
@@ -281,9 +297,9 @@ impl<T> Runtime<T> {
 /// - `P`: The plugin type that corresponds to this handle.
 ///
 #[derive(Debug, Clone)]
-pub struct PluginHandle {
+pub struct PluginHandle<P = Plugin> {
     instance: Instance,
-    store: CallerStore<Plugin>,
+    store: CallerStore<P>,
 }
 
 impl PluginHandle {
@@ -387,6 +403,6 @@ impl<R: DeserializeOwned, I: Serialize> Func<Plugin, I, R> {
     }
 }
 
-pub trait Context: Sized {
-    fn link(&self, linker: &mut Linker<Plugin>);
+pub trait Context<P = Plugin>: Sized {
+    fn link(&self, linker: &mut Linker<P>);
 }
