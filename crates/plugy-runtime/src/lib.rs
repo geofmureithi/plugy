@@ -35,11 +35,12 @@ pub type Linker<D = Plugin> = wasmtime::Linker<Option<RuntimeCaller<D>>>;
 ///
 /// ```rust
 /// use plugy::runtime::Runtime;
+/// use plugy_runtime::Plugin;
 ///
-/// trait Plugin {
+/// trait Greeter {
 ///     fn greet(&self);
 /// }
-/// let runtime = Runtime::<Box<dyn Plugin>>::new();
+/// let runtime = Runtime::<Box<dyn Greeter>>::new();
 /// // Load and manage plugins...
 /// ```
 pub struct Runtime<T, P = Plugin> {
@@ -131,22 +132,34 @@ impl<T, D: Send> Runtime<T, Plugin<D>> {
     ///
     /// ```rust
     /// use plugy_runtime::Runtime;
+    /// use plugy::runtime::Plugin;
     /// use plugy_core::PluginLoader;
     /// use plugy_macros::*;
     /// use std::future::Future;
     /// use std::pin::Pin;
     /// #[plugy_macros::plugin]
-    /// trait Plugin {
-    ///     fn do_stuff(&self);
+    /// trait Greeter {
+    ///     fn do_stuff(&self, input: &str);
     /// }
     ///
     /// // impl Plugin for MyPlugin goes to the wasm file
     /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
     /// struct MyPlugin;
     ///
-    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
-    ///     let plugin = runtime.load(MyPlugin).await?;
-    ///     Ok(())
+    /// impl From<MyPlugin> for Plugin {
+    ///     fn from(val: MyPlugin) -> Self {
+    ///         Plugin {
+    ///             name: "MyPlugin".to_string(),
+    ///             data: Default::default(),
+    ///             plugin_type: "MyPlugin".to_string(),
+    ///         }
+    ///     }
+    /// }
+    ///
+    ///
+    /// async fn example(runtime: &Runtime<Box<dyn Greeter>>) {
+    ///     let plugin = runtime.load(MyPlugin).await.unwrap();
+    ///     // ...
     /// }
     /// ```
     pub async fn load_with<P: Send + PluginLoader + Into<Plugin<D>>>(
@@ -240,7 +253,6 @@ impl<T, D: Send> Runtime<T, Plugin<D>> {
     }
 }
 
-
 impl<T> Runtime<T> {
     /// Loads a plugin using the provided loader and returns the plugin instance.
     ///
@@ -262,21 +274,30 @@ impl<T> Runtime<T> {
     /// # Examples
     ///
     /// ```rust
+    /// use plugy_runtime::Plugin;
     /// use plugy_runtime::Runtime;
     /// use plugy_core::PluginLoader;
     /// use plugy_macros::*;
     /// use std::future::Future;
     /// use std::pin::Pin;
     /// #[plugy_macros::plugin]
-    /// trait Plugin {
-    ///     fn do_stuff(&self);
+    /// trait Greeter {
+    ///     fn do_stuff(&self, input: &str);
     /// }
     ///
     /// // impl Plugin for MyPlugin goes to the wasm file
     /// #[plugin_import(file = "target/wasm32-unknown-unknown/debug/my_plugin.wasm")]
     /// struct MyPlugin;
-    ///
-    /// async fn example(runtime: &Runtime<Box<dyn Plugin>>) -> anyhow::Result<()> {
+    /// impl From<MyPlugin> for Plugin {
+    ///     fn from(val: MyPlugin) -> Self {
+    ///         Plugin {
+    ///             name: "MyPlugin".to_string(),
+    ///             data: Default::default(),
+    ///             plugin_type: "MyPlugin".to_string(),
+    ///         }
+    ///     }
+    /// }
+    /// async fn example(runtime: &Runtime<Box<dyn Greeter>>) -> anyhow::Result<()> {
     ///     let plugin = runtime.load(MyPlugin).await?;
     ///     Ok(())
     /// }
@@ -347,10 +368,16 @@ impl<T, P> Runtime<T, P> {
 impl<T, D> Runtime<T, Plugin<D>> {
     /// Allows exposing methods that will run on the runtime side
     /// ```rust
+    /// use plugy_runtime::Runtime;
+    ///
+    /// trait Greeter {
+    ///     fn greet(&self, text: &str);
+    /// }
     /// #[derive(Debug)]
     /// pub struct Logger;
+    /// # pub type Data = Vec<u8>;
     ///
-    /// #[plugy::macros::context]
+    /// #[plugy::macros::context(data = Data)]
     /// impl Logger {
     ///     pub async fn log(_: &mut plugy::runtime::Caller<'_>, text: &str) {
     ///         dbg!(text);
