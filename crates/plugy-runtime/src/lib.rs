@@ -388,7 +388,7 @@ impl<T, D> Runtime<T, Plugin<D>> {
     ///     .context(Logger);
     /// ````
 
-    pub fn context<C: Context<D>>(&mut self, ctx: C) -> &mut Self {
+    pub fn context<C: Context<D>>(mut self, ctx: C) -> Self {
         ctx.link(&mut self.linker);
         self
     }
