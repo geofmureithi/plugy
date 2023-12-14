@@ -1,7 +1,7 @@
 [package]
 name = "plugy-runtime"
 description = "plugy empowers you to construct agnostic dynamic plugin systems using Rust and WASM"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 readme = "../../README.md"
 categories = ["wasm"]
@@ -15,7 +15,7 @@ repository = "https://github.com/geofmureithi/plugy"
 anyhow = "1"
 bincode = "1.3.3"
 dashmap = "5.5.3"
-plugy-core = { path = "../plugy-core", version = "0.3.0" }
+plugy-core = { path = "../plugy-core", version = "0.3.1" }
 serde = { version = "1", features = ["derive"] }
 wasmtime = "15.0.1"
 async-lock = "3.2.0"
