@@ -17,8 +17,8 @@ serde = { version = "1", features = ["derive"] }
 xtra = { git = "https://github.com/Restioson/xtra", features = ["macros"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-bincode = "1"
-plugy = { path = "../../", default-features = false, features = ["runtime"] }
 tokio = { version = "1", features = ["full"] }
+plugy = { path = "../../", default-features = false, features = ["runtime"] }
+bincode = "1"
 reqwest = "0.11.18"
 xtra = { git = "https://github.com/Restioson/xtra", features = ["macros", "tokio"] }
