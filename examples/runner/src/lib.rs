@@ -13,7 +13,6 @@ pub struct Fetcher;
 
 #[plugy::macros::context(data = Addr)]
 impl Fetcher {
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn fetch(_: &mut plugy::runtime::Caller<'_, Plugin<Addr>>, url: String) -> String {
         reqwest::get(url).await.unwrap().text().await.unwrap()
     }
