@@ -21,4 +21,4 @@ tokio = { version = "1", features = ["full"] }
 plugy = { path = "../../", default-features = false, features = ["runtime"] }
 bincode = "1"
 reqwest = "0.11.18"
-xtra = { git = "https://github.com/Restioson/xtra", features = ["macros", "tokio"] }
+xtra = { git = "https://github.com/Restioson/xtra", features = ["tokio", "macros"] }
