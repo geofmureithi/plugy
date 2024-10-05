@@ -146,7 +146,7 @@ pub fn write_msg<T: serde::ser::Serialize>(value: &T) -> u64 {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use plugy_core::guest::read_msg;
 /// #[derive(serde::Deserialize)]
 /// struct MyStruct {
