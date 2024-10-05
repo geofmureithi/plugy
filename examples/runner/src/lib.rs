@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+#[cfg(not(target_arch = "wasm32"))]
 use plugy::runtime::Plugin;
 use serde::{Deserialize, Serialize};
 use xtra::{Address, Handler};
