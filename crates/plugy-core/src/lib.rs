@@ -14,6 +14,7 @@
 use std::{pin::Pin, future::Future};
 pub mod bitwise;
 pub mod guest;
+pub mod codec;
 
 /// A trait for loading plugin module data asynchronously.
 ///

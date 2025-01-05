@@ -207,8 +207,8 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             quote! {
                 #[no_mangle]
                 pub unsafe extern "C" fn #expose_name_ident(value: u64) -> u64 {
-                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy::core::guest::read_msg(value);
-                    plugy::core::guest::write_msg(&value.#method_name(#(#values),*))
+                    let (#(#values),*): (#(#types),*)  = plugy::core::guest::read_msg(value);
+                    plugy::core::guest::write_msg(&#ty.#method_name(#(#values),*))
                 }
             }
         })
@@ -342,9 +342,9 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
                                         .call_async(&mut caller, into_bitwise(ptr, len))
                                         .await
                                         .unwrap();
-                                    let (#(#method_pats),*) = bincode::deserialize(&buffer).unwrap();
+                                    let (#(#method_pats),*) = plugy::core::codec::deserialize(&buffer).unwrap();
                                     let buffer =
-                                        bincode::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
+                                        plugy::core::codec::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
                                             .unwrap();
                                     let ptr = alloc_fn
                                         .call_async(&mut caller, buffer.len() as _)
