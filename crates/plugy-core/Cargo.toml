@@ -15,4 +15,3 @@ repository = "https://github.com/geofmureithi/plugy"
 serde = { version = "1", features = ["derive"] }
 rmp-serde = "1"
 anyhow = "1"
-base64 = "0.21"
