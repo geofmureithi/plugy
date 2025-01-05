@@ -319,11 +319,11 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
 
                 links.push(quote! {
                     linker
-                        .func_wrap1_async(
+                        .func_wrap_async(
                             "env",
                             #extern_method_name_str,
                             move |mut caller: plugy::runtime::Caller<_>,
-                                ptr: u64|
+                                ptr: (u64,)|
                                 -> Box<dyn std::future::Future<Output = u64> + Send> {
                                 use plugy::core::bitwise::{from_bitwise, into_bitwise};
                                 Box::new(async move {
@@ -335,7 +335,7 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
                                         plugin
                                     } = store;
 
-                                    let (ptr, len) = from_bitwise(ptr);
+                                    let (ptr, len) = from_bitwise(ptr.0);
                                     let mut buffer = vec![0u8; len as _];
                                     memory.read(&mut caller, ptr as _, &mut buffer).unwrap();
                                     dealloc_fn
