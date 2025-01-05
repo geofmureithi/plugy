@@ -23,7 +23,7 @@ impl From<FooPlugin> for Plugin<Addr> {
 
 #[tokio::main]
 async fn main() {
-    let mut runtime = Runtime::<Box<dyn Greeter>, Plugin<Addr>>::new().unwrap();
+    let runtime = Runtime::<Box<dyn Greeter>, Plugin<Addr>>::new().unwrap();
     let runtime = runtime
         // Include the fetcher context
         .context(Fetcher)
