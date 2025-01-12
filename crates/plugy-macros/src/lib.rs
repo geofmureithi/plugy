@@ -125,7 +125,7 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
+        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*> + 'static> {
             type Output = #callable_trait_ident<P, D>;
             fn into_callable(handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>) -> Self::Output {
                 #callable_trait_ident { handle, inner: std::marker::PhantomData }
@@ -207,8 +207,8 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             quote! {
                 #[no_mangle]
                 pub unsafe extern "C" fn #expose_name_ident(value: u64) -> u64 {
-                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy::core::guest::read_msg(value);
-                    plugy::core::guest::write_msg(&value.#method_name(#(#values),*))
+                    let (#(#values),*): (#(#types),*)  = plugy::core::guest::read_msg(value);
+                    plugy::core::guest::write_msg(&#ty.#method_name(#(#values),*))
                 }
             }
         })
@@ -233,7 +233,7 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
 
         impl PluginLoader for #struct_name {
-            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
+            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>  + Send + 'static >> {
                 std::boxed::Box::pin(async {
                     let res = std::fs::read(#file_path)?;
                     Ok(res)
@@ -342,9 +342,9 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
                                         .call_async(&mut caller, into_bitwise(ptr, len))
                                         .await
                                         .unwrap();
-                                    let (#(#method_pats),*) = bincode::deserialize(&buffer).unwrap();
+                                    let (#(#method_pats),*) = plugy::core::codec::deserialize(&buffer).unwrap();
                                     let buffer =
-                                        bincode::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
+                                        plugy::core::codec::serialize(&#struct_name::#method_name(&mut caller, #(#method_pats),*).await)
                                             .unwrap();
                                     let ptr = alloc_fn
                                         .call_async(&mut caller, buffer.len() as _)

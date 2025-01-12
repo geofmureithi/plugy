@@ -6,7 +6,6 @@
 
 use anyhow::Context as ErrorContext;
 use async_lock::RwLock;
-use bincode::Error;
 use dashmap::DashMap;
 use plugy_core::bitwise::{from_bitwise, into_bitwise};
 use plugy_core::PluginLoader;
@@ -72,12 +71,12 @@ impl Plugin {
         self.plugin_type.as_ref()
     }
 
-    pub fn data<T: DeserializeOwned>(&self) -> Result<T, Error> {
-        bincode::deserialize(&self.data)
+    pub fn data<T: DeserializeOwned>(&self) -> Result<T, anyhow::Error> {
+        plugy_core::codec::deserialize(&self.data)
     }
 
     pub fn update<T: Serialize>(&mut self, value: &T) {
-        self.data = bincode::serialize(value).unwrap()
+        self.data = plugy_core::codec::serialize(value).unwrap()
     }
 }
 
@@ -496,7 +495,7 @@ impl<P: Send + Clone, R: DeserializeOwned, I: Serialize> Func<P, I, R> {
             memory, alloc_fn, ..
         } = data;
 
-        let buffer = bincode::serialize(value)?;
+        let buffer = plugy_core::codec::serialize(value)?;
         let len = buffer.len() as _;
         let ptr = alloc_fn.call_async(&mut *store, len).await?;
         memory.write(&mut *store, ptr as _, &buffer)?;
@@ -507,7 +506,7 @@ impl<P: Send + Clone, R: DeserializeOwned, I: Serialize> Func<P, I, R> {
         let (ptr, len) = from_bitwise(ptr);
         let mut buffer = vec![0u8; len as _];
         memory.read(&mut *store, ptr as _, &mut buffer)?;
-        Ok(bincode::deserialize(&buffer)?)
+        Ok(plugy_core::codec::deserialize(&buffer)?)
     }
 }
 

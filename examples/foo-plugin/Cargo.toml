@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 plugy = { path = "../.." }
 runner = { path = "../../examples/runner" }
 serde = { version = "1", features = ["derive"] }
+rmpv = "1"
