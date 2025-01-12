@@ -125,7 +125,7 @@ fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
             #(#async_methods)*
         }
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
+        impl<P, D> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*> + 'static> {
             type Output = #callable_trait_ident<P, D>;
             fn into_callable(handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>) -> Self::Output {
                 #callable_trait_ident { handle, inner: std::marker::PhantomData }
