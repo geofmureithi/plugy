@@ -233,7 +233,7 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
         #input
 
         impl PluginLoader for #struct_name {
-            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
+            fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>  + Send + 'static >> {
                 std::boxed::Box::pin(async {
                     let res = std::fs::read(#file_path)?;
                     Ok(res)

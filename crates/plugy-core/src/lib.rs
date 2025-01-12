@@ -3,7 +3,7 @@
 //! This crate contains fundamental components and utilities that serve as the building blocks for
 //! plugy's dynamic plugin system. It provides essential functionalities that enable seamless integration
 //! of plugins into your Rust applications using WebAssembly (Wasm).
-//! 
+//!
 //!
 //! ## Modules
 //!
@@ -11,10 +11,10 @@
 //! - [`guest`](guest/index.html): A module that facilitates communication between the host application and Wasm plugins.
 //!
 
-use std::{pin::Pin, future::Future};
+use std::future::Future;
 pub mod bitwise;
-pub mod guest;
 pub mod codec;
+pub mod guest;
 
 /// A trait for loading plugin module data asynchronously.
 ///
@@ -28,12 +28,7 @@ pub trait PluginLoader {
     /// This method returns a `Future` that produces a `Result` containing
     /// the Wasm module data as a `Vec<u8>` on success, or an `anyhow::Error`
     /// if loading encounters issues.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>`
-    /// representing the asynchronous loading process.
-    fn bytes(&self) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, anyhow::Error>>>>;
+    fn bytes(&self) -> impl Future<Output = Result<Vec<u8>, anyhow::Error>> + Send;
 
     /// A plugins name should be known before loading.
     /// It might just be `std::any::type_name::<Self>()`
