@@ -13,7 +13,7 @@ repository = "https://github.com/geofmureithi/plugy"
 
 [dependencies]
 anyhow = "1"
-bincode = "1.3.3"
+bincode = "2.0.0"
 dashmap = "6.0.0"
 plugy-core = { path = "../plugy-core", version = "0.3.1" }
 serde = { version = "1", features = ["derive"] }
