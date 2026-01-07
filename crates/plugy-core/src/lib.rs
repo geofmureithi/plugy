@@ -3,7 +3,7 @@
 //! This crate contains fundamental components and utilities that serve as the building blocks for
 //! plugy's dynamic plugin system. It provides essential functionalities that enable seamless integration
 //! of plugins into your Rust applications using WebAssembly (Wasm).
-//! 
+//!
 //!
 //! ## Modules
 //!
@@ -11,7 +11,7 @@
 //! - [`guest`](guest/index.html): A module that facilitates communication between the host application and Wasm plugins.
 //!
 
-use std::{pin::Pin, future::Future};
+use std::{future::Future, pin::Pin};
 pub mod bitwise;
 pub mod guest;
 

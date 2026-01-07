@@ -60,7 +60,6 @@ pub const fn into_bitwise(a: u32, b: u32) -> u64 {
     (a as u64) | (b as u64) << 32
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;

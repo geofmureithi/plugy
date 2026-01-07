@@ -1,6 +1,6 @@
 use plugy::macros::plugin_impl;
 use serde::Deserialize;
-use shared::{Greeter, logger::sync::Logger, fetcher::sync::Fetcher};
+use shared::{fetcher::sync::Fetcher, logger::sync::Logger, Greeter};
 
 #[derive(Debug, Deserialize)]
 struct FooPlugin;
