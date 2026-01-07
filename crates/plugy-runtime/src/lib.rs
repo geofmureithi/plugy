@@ -43,7 +43,10 @@ pub type Linker<D = Plugin> = wasmtime::Linker<Option<RuntimeCaller<D>>>;
 /// let runtime = Runtime::<Box<dyn Greeter>>::new();
 /// // Load and manage plugins...
 /// ```
-pub struct Runtime<T, P = Plugin> {
+pub struct Runtime<T, P = Plugin>
+where
+    P: 'static,
+{
     engine: Engine,
     linker: Linker<P>,
     modules: DashMap<&'static str, RuntimeModule<P>>,
@@ -83,7 +86,10 @@ impl Plugin {
 
 /// Single runnable module
 #[allow(dead_code)]
-pub struct RuntimeModule<P> {
+pub struct RuntimeModule<P>
+where
+    P: 'static,
+{
     inner: Module,
     store: CallerStore<P>,
     instance: Instance,
@@ -110,7 +116,7 @@ impl<P: std::fmt::Debug> fmt::Debug for RuntimeCaller<P> {
     }
 }
 
-impl<T, D: Send> Runtime<T, Plugin<D>> {
+impl<T, D: Send + 'static> Runtime<T, Plugin<D>> {
     /// Loads a plugin using the provided loader and returns the plugin instance.
     ///
     /// This asynchronous function loads a plugin by calling the `load` method on
@@ -339,7 +345,10 @@ impl<T> Runtime<T> {
     }
 }
 
-impl<T, P> Runtime<T, P> {
+impl<T, P> Runtime<T, P>
+where
+    P: 'static,
+{
     /// Creates a new instance of the `Runtime` with default configuration.
     ///
     /// This function initializes a `Runtime` instance using the default configuration
@@ -387,7 +396,6 @@ impl<T, D> Runtime<T, Plugin<D>> {
     /// let runtime = runtime
     ///     .context(Logger);
     /// ````
-
     pub fn context<C: Context<D>>(mut self, ctx: C) -> Self {
         ctx.link(&mut self.linker);
         self
@@ -405,7 +413,10 @@ impl<T, D> Runtime<T, Plugin<D>> {
 /// - `P`: The plugin type that corresponds to this handle.
 ///
 #[derive(Debug, Clone)]
-pub struct PluginHandle<P = Plugin> {
+pub struct PluginHandle<P = Plugin>
+where
+    P: 'static,
+{
     instance: Instance,
     store: CallerStore<P>,
 }
@@ -431,7 +442,6 @@ impl<D> PluginHandle<Plugin<D>> {
     ///
     /// Returns a `Result` containing the typed function interface on success,
     /// or an `anyhow::Error` if the function retrieval encounters any issues.
-
     pub async fn get_func<I: Serialize, R: DeserializeOwned>(
         &self,
         name: &str,
@@ -450,7 +460,10 @@ impl<D> PluginHandle<Plugin<D>> {
     }
 }
 
-pub struct Func<P, I: Serialize, R: DeserializeOwned> {
+pub struct Func<P, I: Serialize, R: DeserializeOwned>
+where
+    P: 'static,
+{
     inner_wasm_fn: wasmtime::TypedFunc<u64, u64>,
     store: CallerStore<P>,
     input: PhantomData<I>,
@@ -488,7 +501,6 @@ impl<P: Send + Clone, R: DeserializeOwned, I: Serialize> Func<P, I, R> {
     ///
     /// Returns a `Result` containing the result of the plugin function call on success,
     /// or an `anyhow::Error` if the function call or deserialization encounters issues.
-
     pub async fn call_checked(&self, value: &I) -> anyhow::Result<R> {
         let mut store = self.store.write().await;
         let data = store.data_mut().clone().unwrap();

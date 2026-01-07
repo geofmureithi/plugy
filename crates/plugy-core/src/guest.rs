@@ -33,7 +33,6 @@ use crate::bitwise::{from_bitwise, into_bitwise};
 /// // Remember to deallocate the buffer when it's no longer needed.
 /// unsafe { dealloc(buffer_ptr as u64) };
 /// ```
-#[inline]
 #[no_mangle]
 pub extern "C" fn alloc(len: u32) -> *mut u8 {
     let mut buf = Vec::with_capacity(len as _);
@@ -52,7 +51,7 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 /// # Arguments
 ///
 /// * `value` - The value representing the pointer and length of the buffer to
-///            deallocate, obtained from the `alloc` function.
+///   deallocate, obtained from the `alloc` function.
 ///
 /// # Safety
 ///
@@ -70,12 +69,10 @@ pub extern "C" fn alloc(len: u32) -> *mut u8 {
 /// // Use the allocated buffer...
 /// unsafe { dealloc(buffer_ptr as u64) };
 /// ```
-#[inline]
 #[no_mangle]
 pub unsafe extern "C" fn dealloc(value: u64) {
     let (ptr, len) = from_bitwise(value);
-    #[allow(clippy::useless_transmute)]
-    let ptr = std::mem::transmute::<usize, *mut u8>(ptr as _);
+    let ptr = std::ptr::with_exposed_provenance_mut::<u8>(ptr as _);
     let buffer = Vec::from_raw_parts(ptr, len as _, len as _);
     std::mem::drop(buffer);
 }
@@ -131,7 +128,7 @@ pub fn write_msg<T: serde::ser::Serialize>(value: &T) -> u64 {
 /// # Arguments
 ///
 /// * `value` - The combined representation of the serialized buffer's pointer and
-///            length, obtained from the `write_msg` function.
+///   length, obtained from the `write_msg` function.
 ///
 /// # Returns
 ///
@@ -159,7 +156,7 @@ pub fn write_msg<T: serde::ser::Serialize>(value: &T) -> u64 {
 pub unsafe fn read_msg<T: serde::de::DeserializeOwned>(value: u64) -> T {
     let (ptr, len) = from_bitwise(value);
     #[allow(clippy::useless_transmute)]
-    let ptr = std::mem::transmute::<usize, *mut u8>(ptr as _);
+    let ptr = std::ptr::with_exposed_provenance_mut::<u8>(ptr as _);
     let buffer = Vec::from_raw_parts(ptr, len as _, len as _);
     bincode::deserialize(&buffer).expect("invalid bytes provided")
 }
