@@ -360,8 +360,7 @@ where
     /// Returns a `Result` containing the initialized `Runtime` instance on success,
     /// or an `anyhow::Error` if the creation process encounters any issues.
     pub fn new() -> anyhow::Result<Self> {
-        let mut config = wasmtime::Config::new();
-        config.async_support(true);
+        let config = wasmtime::Config::new();
         let engine = Engine::new(&config)?;
         let linker = Linker::new(&engine);
         let modules = DashMap::new();

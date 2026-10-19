@@ -6,7 +6,7 @@ use plugy::{
 use shared::{Addr, Fetcher, Greeter, Logger, Printer};
 use xtra::Mailbox;
 
-#[plugin_import(file = "target/wasm32-unknown-unknown/debug/foo_plugin.wasm")]
+#[plugin_import(file = "target/wasm32-unknown-unknown/debug/greeter_assoc_plugin.wasm")]
 #[derive(Debug)]
 struct FooPlugin {
     addr: Addr,
@@ -21,9 +21,11 @@ impl From<FooPlugin> for Plugin<Addr> {
     }
 }
 
+type DynGreeter = Box<dyn Greeter<Input = String, Output = String>>;
+
 #[tokio::main]
 async fn main() {
-    let runtime = Runtime::<Box<dyn Greeter>, Plugin<Addr>>::new().unwrap();
+    let runtime = Runtime::<DynGreeter, Plugin<Addr>>::new().unwrap();
     let runtime = runtime
         // Include the fetcher context
         .context(Fetcher)

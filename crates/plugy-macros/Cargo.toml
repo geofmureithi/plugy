@@ -14,7 +14,7 @@ proc-macro = true
 
 [dependencies]
 quote = "1.0"
-syn = { features = ["full", "parsing"], version = "3.0" }
+syn = { features = ["full", "visit-mut", "extra-traits"], version = "3.0" }
 proc-macro2 = "1"
-darling = "0.24.0"
+darling = "0.24.1"
 convert_case = "0.12.0"
