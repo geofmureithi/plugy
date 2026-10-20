@@ -27,8 +27,10 @@ members = [
     "crates/plugy-core",
     "crates/plugy-macros",
     "crates/plugy-runtime",
-    "examples/runner",
-    "examples/foo-plugin",
+    "examples/basic/runner",
+    "examples/basic/greeter-plugin",
+    "examples/assoc-types/runner",
+    "examples/assoc-types/greeter-assoc-plugin",
 ]
 
 

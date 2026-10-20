@@ -1,0 +1,24 @@
+[package]
+name = "runner-assoc"
+version = "0.3.1"
+edition = "2021"
+
+[lib]
+name = "shared"
+path = "src/lib.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+plugy = { path = "../../../" }
+serde = { version = "1", features = ["derive"] }
+xtra = { git = "https://github.com/Restioson/xtra", features = ["macros"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+plugy = { path = "../../../", default-features = false, features = ["runtime"] }
+bincode = "1"
+reqwest = "0.11.27"
+xtra = { git = "https://github.com/Restioson/xtra", features = ["tokio", "macros"] }

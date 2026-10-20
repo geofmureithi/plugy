@@ -9,9 +9,13 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
 use syn::{
-    parse_macro_input, DeriveInput, FnArg, ImplItem, ImplItemFn, ItemImpl, ItemTrait, MetaNameValue,
+    parse_macro_input, visit_mut::VisitMut, DeriveInput, FnArg, ImplItem, ImplItemFn, ItemImpl,
+    ItemTrait, MetaNameValue, TraitItem,
 };
 
+use crate::visitor::{GuestSelfRewriter, HostAssocRewriter};
+
+mod visitor;
 /// A procedural macro attribute for generating an asynchronous and callable version of a trait on the host side.
 ///
 /// This procedural macro generates an asynchronous version of the provided trait by
@@ -47,87 +51,109 @@ pub fn plugin(_: TokenStream, input: TokenStream) -> TokenStream {
 
 fn generate_async_trait(trait_item: &ItemTrait) -> proc_macro2::TokenStream {
     let trait_name = &trait_item.ident;
-    let trait_methods = &trait_item.items;
 
-    let mut generic_types = vec![];
+    let assoc: Vec<syn::Ident> = trait_item
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            TraitItem::Type(t) => Some(t.ident.clone()),
+            _ => None,
+        })
+        .collect();
 
-    let async_methods = trait_methods.iter().map(|item| match item {
-        syn::TraitItem::Fn(method) => {
+    let async_methods: Vec<_> = trait_item
+        .items
+        .iter()
+        .filter_map(|item| {
+            let TraitItem::Fn(method) = item else {
+                return None;
+            };
             let method_name = &method.sig.ident;
-            let method_inputs: Vec<_> = method
-                .sig
+            let mut sig = method.sig.clone();
+
+            let mut rw = HostAssocRewriter { known: &assoc };
+            for input in sig.inputs.iter_mut() {
+                if let FnArg::Typed(t) = input {
+                    rw.visit_type_mut(&mut t.ty);
+                }
+            }
+            rw.visit_return_type_mut(&mut sig.output);
+
+            let method_inputs: Vec<_> = sig
                 .inputs
                 .iter()
-                .map(|input| match &input {
+                .map(|input| match input {
                     FnArg::Receiver(_) => input.to_token_stream(),
-                    FnArg::Typed(typed) => match *typed.ty.clone() {
-                        syn::Type::Path(path) => {
+                    FnArg::Typed(typed) => match &*typed.ty {
+                        // Bare `Self` (or Self buried in generics) keeps the raw-bytes treatment.
+                        syn::Type::Path(path)
                             if path.path.segments.iter().any(|seg| {
                                 seg.ident == "Self"
                                     || seg.arguments.to_token_stream().to_string().contains("Self")
-                            }) {
-                                let arg_name = &typed.pat;
-                                quote! {
-                                    #arg_name: &Vec<u8>
-                                }
-                            } else {
-                                input.to_token_stream()
-                            }
+                            }) =>
+                        {
+                            let arg_name = &typed.pat;
+                            quote! { #arg_name: &Vec<u8> }
                         }
                         _ => input.to_token_stream(),
                     },
                 })
                 .collect();
-            let method_output = &method.sig.output;
+            let method_output = &sig.output;
             let method_name_str = method_name.to_string();
-            let values: Vec<_> = method
-                .sig
+            let values: Vec<_> = sig
                 .inputs
                 .iter()
                 .filter_map(|arg| match arg {
-                    syn::FnArg::Receiver(_) => None,
-                    syn::FnArg::Typed(t) => Some(t.pat.to_token_stream()),
+                    FnArg::Receiver(_) => None,
+                    FnArg::Typed(t) => Some(t.pat.to_token_stream()),
                 })
                 .collect();
-            quote! {
-                pub async fn #method_name(#(#method_inputs), *) #method_output {
+
+            Some(quote! {
+                pub async fn #method_name(#(#method_inputs),*) #method_output {
                     let func = self.handle.get_func(#method_name_str).await.unwrap();
                     func.call_unchecked(&(#(#values),*)).await
                 }
-            }
-        }
-        syn::TraitItem::Type(ty) => {
-            let ident_type = &ty.ident;
+            })
+        })
+        .collect();
 
-            generic_types.push(quote! {
-                #ident_type = Vec<u8>
-            });
-            quote! {}
-        }
+    let callable_trait_ident =
+        syn::Ident::new(&format!("{}Wrapper", trait_name), trait_name.span());
 
-        _ => {
-            quote! {}
-        }
-    });
-
-    let callable_trait_name = format!("{}Wrapper", trait_name);
-    let callable_trait_ident = syn::Ident::new(&callable_trait_name, trait_name.span());
+    // `, InputT, OutputT` (empty when the trait has no associated types).
+    let extra = quote! { #(, #assoc)* };
+    // `InputT: Serialize + DeserializeOwned + 'static, ...`
+    let extra_bounded = quote! {
+        #(, #assoc: serde::Serialize + serde::de::DeserializeOwned + 'static)*
+    };
+    // `InputT = InputT, ...` for the trait object.
+    let dyn_args = quote! { #(#assoc = #assoc),* };
 
     quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #[derive(Debug, Clone)]
-        pub struct #callable_trait_ident<P, D> where D: 'static {
+        pub struct #callable_trait_ident<P, D #extra> where D: 'static {
             pub handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>,
-            inner: std::marker::PhantomData<P>
+            inner: std::marker::PhantomData<(P #extra)>
         }
+
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D: Clone + Send> #callable_trait_ident<P, D> where D: 'static  {
+        impl<P, D: Clone + Send #extra_bounded> #callable_trait_ident<P, D #extra>
+        where D: 'static
+        {
             #(#async_methods)*
         }
+
         #[cfg(not(target_arch = "wasm32"))]
-        impl<P, D: 'static> plugy::runtime::IntoCallable<P, D> for Box<dyn #trait_name<#(#generic_types),*>> {
-            type Output = #callable_trait_ident<P, D>;
-            fn into_callable(handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>) -> Self::Output {
+        impl<P, D: 'static #extra_bounded> plugy::runtime::IntoCallable<P, D>
+            for Box<dyn #trait_name<#dyn_args>>
+        {
+            type Output = #callable_trait_ident<P, D #extra>;
+            fn into_callable(
+                handle: plugy::runtime::PluginHandle<plugy::runtime::Plugin<D>>,
+            ) -> Self::Output {
                 #callable_trait_ident { handle, inner: std::marker::PhantomData }
             }
         }
@@ -182,24 +208,37 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
     let cur_impl: proc_macro2::TokenStream = input.clone().into();
     let imp = parse_macro_input!(input as ItemImpl);
     let ty = &imp.self_ty;
+    let trait_path = match &imp.trait_ {
+        Some((path, _)) => path.clone(),
+        None => {
+            return syn::Error::new_spanned(&imp.self_ty, "#[plugin_impl] requires a trait impl")
+                .to_compile_error()
+                .into()
+        }
+    };
     let methods: Vec<&ImplItemFn> = impl_methods(&imp).collect();
     let derived: proc_macro2::TokenStream = methods
         .iter()
         .map(|m| {
             let method_name = &m.sig.ident;
             let args = &m.sig.inputs;
+            let mut rewriter = GuestSelfRewriter { self_ty: ty, trait_path: &trait_path };
             let types: Vec<_> = args
                 .iter()
                 .filter_map(|arg| match arg {
-                    syn::FnArg::Receiver(_) => None,
-                    syn::FnArg::Typed(t) => Some(t.ty.to_token_stream()),
+                    FnArg::Receiver(_) => None,
+                    FnArg::Typed(t) => {
+                        let mut t_ty = (*t.ty).clone();
+                        rewriter.visit_type_mut(&mut t_ty);
+                        Some(t_ty.to_token_stream())
+                    }
                 })
                 .collect();
             let values: Vec<_> = args
                 .iter()
                 .filter_map(|arg| match arg {
-                    syn::FnArg::Receiver(_) => None,
-                    syn::FnArg::Typed(t) => Some(t.pat.to_token_stream()),
+                    FnArg::Receiver(_) => None,
+                    FnArg::Typed(t) => Some(t.pat.to_token_stream()),
                 })
                 .collect();
             let expose_name = format!("_plugy_guest_{}", method_name);
@@ -207,20 +246,15 @@ pub fn plugin_impl(_metadata: TokenStream, input: TokenStream) -> TokenStream {
             quote! {
                 #[no_mangle]
                 pub unsafe extern "C" fn #expose_name_ident(value: u64) -> u64 {
-                    let (value, #(#values),*): (#ty, #(#types),*)  = plugy::core::guest::read_msg(value);
+                    let (value, #(#values),*): (#ty, #(#types),*) = plugy::core::guest::read_msg(value);
                     plugy::core::guest::write_msg(&value.#method_name(#(#values),*))
                 }
             }
         })
         .collect();
 
-    quote! {
-        #cur_impl
-        #derived
-    }
-    .into()
+    quote! { #cur_impl #derived }.into()
 }
-
 #[proc_macro_attribute]
 pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -235,7 +269,8 @@ pub fn plugin_import(args: TokenStream, input: TokenStream) -> TokenStream {
         impl PluginLoader for #struct_name {
             fn bytes(&self) -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<u8>, anyhow::Error>>>> {
                 std::boxed::Box::pin(async {
-                    let res = std::fs::read(#file_path)?;
+                    let path = std::fs::canonicalize(#file_path)?;
+                    let res = std::fs::read(path)?;
                     Ok(res)
                 })
             }
@@ -310,6 +345,8 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
                 );
 
                 externs.push(quote::quote! {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "env")]
                     extern "C" {
                         fn #extern_method_name(ptr: u64) -> u64;
                     }
@@ -394,7 +431,6 @@ pub fn context(args: TokenStream, input: TokenStream) -> TokenStream {
         }
         pub mod #mod_name {
             pub mod sync {
-                #[cfg(target_arch = "wasm32")]
                 #(#externs)*
 
                 pub struct #struct_name;
